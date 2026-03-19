@@ -1,1 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>What Can I Cook?</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f7f6f3;
+    color: #37352f;
+    min-height: 100vh;
+    padding: 24px 16px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 2rem; font-weight: 700; margin-bottom: 6px; }
+  .subtitle { color: #787774; margin-bottom: 28px; font-size: 0.95rem; }
 
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    border: 1px solid #e9e9e7;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+
+  label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 8px; }
+  textarea {
+    width: 100%; border: 1px solid #e3e3e1; border-radius: 8px;
+    padding: 12px; font-size: 0.9rem; font-family: inherit;
+    resize: vertical; min-height: 120px; background: #fbfaf8;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { outline: none; border-color: #a78bfa; }
+
+  .row { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+
+  button {
+    padding: 10px 20px; border-radius: 8px; border: none;
+    font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-primary { background: #7c3aed; color: white; }
+  .btn-primary:hover { background: #6d28d9; }
+  .btn-primary:disabled { background: #c4b5fd; cursor: not-allowed; }
+  .btn-secondary { background: #f3f4f6; color: #374151; }
+  .btn-secondary:hover { background: #e5e7eb; }
+
+  .results { margin-top: 8px; }
+
+  .section-title {
+    font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #787774; margin: 20px 0 10px;
+  }
+
+  .recipe-card {
+    border: 1px solid #e9e9e7; border-radius: 10px;
+    padding: 16px; margin-bottom: 10px; background: white;
+    transition: box-shadow 0.15s;
+  }
+  .recipe-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+
+  .recipe-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .recipe-name { font-weight: 700; font-size: 1rem; }
+  .badge {
+    font-size: 0.72rem; font-weight: 600; padding: 3px 8px; border-radius: 20px; white-space: nowrap;
+  }
+  .badge-green { background: #dcfce7; color: #166534; }
+  .badge-yellow { background: #fef9c3; color: #854d0e; }
+  .badge-red { background: #fee2e2; color: #991b1b; }
+
+  .recipe-meta { color: #787774; font-size: 0.82rem; margin-top: 4px; }
+  .missing-list { margin-top: 8px; font-size: 0.85rem; }
+  .missing-list span { color: #ef4444; }
+  .replacement-note { color: #7c3aed; font-size: 0.82rem; margin-top: 4px; font-style: italic; }
+
+  .loading {
+    display: flex; align-items: center; gap: 10px;
+    color: #787774; font-size: 0.9rem; padding: 16px 0;
+  }
+  .spinner {
+    width: 18px; height: 18px; border: 2px solid #e5e7eb;
+    border-top-color: #7c3aed; border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error { color: #ef4444; font-size: 0.88rem; padding: 10px 0; }
+  .empty { color: #787774; font-size: 0.9rem; padding: 12px 0; text-align: center; }
+
+  .inventory-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip {
+    background: #f3f4f6; border-radius: 20px; padding: 3px 10px;
+    font-size: 0.78rem; color: #374151;
+  }
+  .chip-loaded { background: #ede9fe; color: #5b21b6; }
+
+  .tip { font-size: 0.8rem; color: #9ca3af; margin-top: 8px; }
+
+  .progress-bar {
+    height: 5px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-top: 8px;
+  }
+  .progress-fill {
+    height: 100%; background: #7c3aed; border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🤖 What Can I Cook?</h1>
+  <p class="subtitle">Paste your kitchen inventory below, or load it straight from Notion.</p>
+
+  <div class="card">
+    <label>Your Kitchen Inventory</label>
+    <textarea id="inventoryInput" placeholder="e.g. eggs, milk, pasta, garlic, tinned tomatoes, olive oil..."></textarea>
+    <div class="row">
+      <button class="btn-secondary" onclick="loadFromNotion()">📦 Load from Notion Inventory</button>
+      <button class="btn-primary" id="findBtn" onclick="findRecipes()">🔍 Find Recipes</button>
+    </div>
+    <div id="inventoryStatus"></div>
+  </div>
+
+  <div id="resultsArea" class="results"></div>
+</div>
+
+<script>
+const RECIPE_DS = "66ed8a88-0fcf-400a-8836-fe6e97ecbc91";
+const INVENTORY_DS = "f84a7a87-4ae0-4e26-91dd-1bdb34b481b8";
+const REPLACEMENTS_DS = "24d58ad9-47b1-4780-8a09-cd21de7892b4";
+
+async function callClaude(messages, system) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: system || "",
+      messages
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.content.map(b => b.text || "").join("");
+}
+
+async function callClaudeWithTools(messages, system) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: system || "",
+      messages,
+      mcp_servers: [
+        { type: "url", url: "https://mcp.notion.com/mcp", name: "notion" }
+      ]
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  // Extract text and tool results
+  const texts = data.content.filter(b => b.type === "text").map(b => b.text);
+  const toolResults = data.content.filter(b => b.type === "mcp_tool_result").map(b => b.content?.[0]?.text || "");
+  return { texts, toolResults, raw: data.content };
+}
+
+function setStatus(html) {
+  document.getElementById("inventoryStatus").innerHTML = html;
+}
+
+function setResults(html) {
+  document.getElementById("resultsArea").innerHTML = html;
+}
+
+async function loadFromNotion() {
+  setStatus('<div class="loading"><div class="spinner"></div>Loading inventory from Notion...</div>');
+  try {
+    const { texts, toolResults } = await callClaudeWithTools([{
+      role: "user",
+      content: `Fetch the Kitchen Inventory Notion database using data source ID: collection://${INVENTORY_DS}. List all items as a simple comma-separated list of item names only. Nothing else.`
+    }], "You are a helpful assistant. When asked to fetch Notion data, use the available Notion MCP tools. Return only the requested data, no preamble.");
+
+    const allText = [...texts, ...toolResults].join(" ");
+    // Extract comma-separated items
+    const match = allText.match(/([A-Za-z][A-Za-z\s&,'-]+)/g);
+    const items = allText.split(/[,\n]/).map(s => s.trim()).filter(s => s.length > 2 && s.length < 50);
+    const unique = [...new Set(items)].slice(0, 40);
+    
+    if (unique.length > 0) {
+      document.getElementById("inventoryInput").value = unique.join(", ");
+      setStatus(`<div class="inventory-chips">${unique.map(i => `<span class="chip chip-loaded">${i}</span>`).join("")}</div><p class="tip">✅ Loaded ${unique.length} items from your Notion Kitchen Inventory</p>`);
+    } else {
+      setStatus('<p class="tip">⚠️ Loaded but couldn\'t parse items clearly — try typing them manually.</p>');
+    }
+  } catch (e) {
+    setStatus(`<p class="error">Error loading inventory: ${e.message}</p>`);
+  }
+}
+
+async function findRecipes() {
+  const inventory = document.getElementById("inventoryInput").value.trim();
+  if (!inventory) { setStatus('<p class="error">Please enter or load your kitchen inventory first.</p>'); return; }
+
+  const btn = document.getElementById("findBtn");
+  btn.disabled = true;
+  btn.textContent = "Searching...";
+
+  setResults(`
+    <div class="loading"><div class="spinner"></div>Fetching your saved recipes from Notion...</div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:15%"></div></div>
+  `);
+
+  try {
+    // Step 1: Get recipes + replacements from Notion via Claude
+    document.getElementById("progressFill").style.width = "35%";
+
+    const { texts: recipeTexts, toolResults: recipeData } = await callClaudeWithTools([{
+      role: "user",
+      content: `Fetch all recipes from Notion data source collection://${RECIPE_DS}. For each recipe return: Recipe name, Ingredients field, Meal Type, Cuisine. Also fetch ingredient replacements from collection://${REPLACEMENTS_DS} — return Original Ingredient, Replacement Ingredient, Recipe relation. Format as JSON array with keys: name, ingredients, mealType, cuisine, replacements (array of {original, replacement}).`
+    }], "You are a data retrieval assistant. Fetch from Notion and return a clean JSON array. No markdown fences, no preamble, just the JSON.");
+
+    document.getElementById("progressFill").style.width = "65%";
+
+    const rawData = [...recipeTexts, ...recipeData].join("\n");
+
+    // Step 2: Ask Claude to analyse match against inventory
+    document.getElementById("progressFill").style.width = "80%";
+
+    const analysis = await callClaude([{
+      role: "user",
+      content: `You are a helpful kitchen assistant. 
+
+KITCHEN INVENTORY (items I currently have):
+${inventory}
+
+RECIPE DATA FROM NOTION:
+${rawData}
+
+Analyse which recipes I can make. For each recipe:
+1. Check if all ingredients are in my inventory (fuzzy match — "tinned tomatoes" matches "canned tomatoes", "eggs" matches "egg" etc.)
+2. Check if any missing ingredients have listed replacements that ARE in my inventory
+3. Categorise each recipe as:
+   - "can_make": all ingredients available (or replaceable with what I have)
+   - "nearly": 1-3 ingredients missing
+   - "cannot": more than 3 ingredients missing
+
+Return ONLY a JSON array (no markdown, no explanation) like:
+[{
+  "name": "Recipe Name",
+  "status": "can_make|nearly|cannot",
+  "mealType": "Dinner",
+  "cuisine": "Italian",
+  "missing": ["ingredient1", "ingredient2"],
+  "replacementNote": "Can use X instead of Y"
+}]
+
+If there are no saved recipes yet, return [].`
+    }]);
+
+    document.getElementById("progressFill").style.width = "100%";
+
+    // Parse and render
+    let recipes = [];
+    try {
+      const jsonMatch = analysis.match(/\[[\s\S]*\]/);
+      recipes = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+    } catch(e) {
+      recipes = [];
+    }
+
+    renderResults(recipes, inventory);
+
+  } catch (e) {
+    setResults(`<p class="error">Something went wrong: ${e.message}. Make sure your Notion is connected.</p>`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔍 Find Recipes";
+  }
+}
+
+function renderResults(recipes, inventory) {
+  if (recipes.length === 0) {
+    setResults(`<div class="card"><p class="empty">No recipes found yet — add some to your Notion Recipes database first! Each recipe needs an <strong>Ingredients</strong> field filled in.</p></div>`);
+    return;
+  }
+
+  const canMake = recipes.filter(r => r.status === "can_make");
+  const nearly = recipes.filter(r => r.status === "nearly");
+  const cannot = recipes.filter(r => r.status === "cannot");
+
+  let html = "";
+
+  if (canMake.length > 0) {
+    html += `<p class="section-title">✅ You can make these right now (${canMake.length})</p>`;
+    canMake.forEach(r => html += recipeCard(r));
+  }
+
+  if (nearly.length > 0) {
+    html += `<p class="section-title">⚠️ Almost there — just a few items missing (${nearly.length})</p>`;
+    nearly.forEach(r => html += recipeCard(r));
+  }
+
+  if (cannot.length > 0) {
+    html += `<p class="section-title">❌ Need more ingredients (${cannot.length})</p>`;
+    cannot.forEach(r => html += recipeCard(r));
+  }
+
+  setResults(html);
+}
+
+function recipeCard(r) {
+  const badgeClass = r.status === "can_make" ? "badge-green" : r.status === "nearly" ? "badge-yellow" : "badge-red";
+  const badgeText = r.status === "can_make" ? "✅ Ready to cook" : r.status === "nearly" ? "⚠️ Nearly there" : "❌ Missing items";
+  const meta = [r.mealType, r.cuisine].filter(Boolean).join(" · ");
+  const missing = r.missing && r.missing.length > 0
+    ? `<div class="missing-list">Missing: ${r.missing.map(m => `<span>${m}</span>`).join(", ")}</div>`
+    : "";
+  const rep = r.replacementNote ? `<div class="replacement-note">💡 ${r.replacementNote}</div>` : "";
+
+  return `
+    <div class="recipe-card">
+      <div class="recipe-header">
+        <span class="recipe-name">${r.name}</span>
+        <span class="badge ${badgeClass}">${badgeText}</span>
+      </div>
+      ${meta ? `<div class="recipe-meta">${meta}</div>` : ""}
+      ${missing}${rep}
+    </div>`;
+}
+</script>
+</body>
+</html>
