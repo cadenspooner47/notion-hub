@@ -220,9 +220,11 @@
 // Config
 // ─────────────────────────────────────────────
 // Repo: https://cadenspooner47.github.io/notion-hub/recipe-importer.html
-const NOTION_MCP    = 'https://mcp.notion.com/mcp';
+// Proxy: replace PROXY_URL below with your Cloudflare Worker URL
+const PROXY_URL     = 'https://notion-hub-proxy.YOUR-SUBDOMAIN.workers.dev';
+const NOTION_MCP    = PROXY_URL + '/notion/mcp';
+const ANTHROPIC_API = PROXY_URL + '/anthropic';
 const RECIPES_DS    = '66ed8a88-0fcf-400a-8836-fe6e97ecbc91';
-const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
 const MODEL         = 'claude-sonnet-4-6';
 
 const MEAL_TYPES  = ['Breakfast','Lunch','Dinner','Snack','Dessert','Drinks','Sides'];
@@ -271,7 +273,7 @@ async function callClaude(messages, system, useMCP, useWebSearch) {
   if (useMCP) body.mcp_servers = [{ type: 'url', url: NOTION_MCP, name: 'notion' }];
   if (useWebSearch) body.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
 
-  const res  = await fetch(ANTHROPIC_API, {
+  const res  = await fetch(ANTHROPIC_API + '/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
