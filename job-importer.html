@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="frame-ancestors *;">
 <title>Job Inbox</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -20,7 +21,7 @@ textarea { resize: vertical; min-height: 90px; }
 .btn-row { display: flex; gap: 7px; margin-top: 9px; flex-wrap: wrap; }
 button { padding: 8px 15px; border-radius: 7px; border: none; font-size: 0.84rem; font-weight: 600; cursor: pointer; }
 .btn-a { background: #d97706; color: white; }
-.btn-a:hover { background: #b45309; }
+.btn-a:hover:not(:disabled) { background: #b45309; }
 .btn-a:disabled { background: #fde68a; color: #92400e; cursor: not-allowed; }
 .btn-b { background: #16a34a; color: white; }
 .btn-b:hover:not(:disabled) { background: #15803d; }
@@ -42,22 +43,38 @@ button { padding: 8px 15px; border-radius: 7px; border: none; font-size: 0.84rem
 .rlist { padding-left: 16px; font-size: 0.83rem; line-height: 1.7; color: #374151; }
 .rdesc { font-size: 0.83rem; line-height: 1.6; color: #374151; }
 .badge { display: inline-block; font-size: 0.69rem; font-weight: 600; padding: 2px 7px; border-radius: 20px; }
-.ba { background: #fef3c7; color: #92400e; }
+.ba  { background: #fef3c7; color: #92400e; }
 .bd-w { background: #fee2e2; color: #991b1b; }
 .bd-o { background: #dcfce7; color: #166534; }
 .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .empty { color: #9ca3af; text-align: center; font-size: 0.86rem; padding: 18px 0; }
+/* Batch queue styles */
+.queue-item { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid #f3f4f6; font-size: 0.83rem; }
+.queue-item:last-child { border-bottom: none; }
+.q-url { flex: 1; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.q-status { flex-shrink: 0; font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+.q-waiting  { background: #f3f4f6; color: #6b7280; }
+.q-working  { background: #fef3c7; color: #92400e; }
+.q-done     { background: #dcfce7; color: #166534; }
+.q-error    { background: #fee2e2; color: #991b1b; }
+.q-remove   { flex-shrink: 0; background: none; border: none; color: #d1d5db; cursor: pointer; font-size: 1rem; padding: 0 2px; font-weight: 400; }
+.q-remove:hover { color: #ef4444; }
+.batch-summary { font-size: 0.82rem; color: #6b7280; margin-top: 8px; }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>&#x1F4E5; Job Inbox</h1>
-  <p class="subtitle">Parse a job listing and send it to your Waiting Room in Notion. Cover letters and fit scoring happen in the Waiting Room.</p>
+  <p class="subtitle">Parse job listings and send them to your Waiting Room in Notion. Cover letters and fit scoring happen in the Waiting Room.</p>
   <div class="tabs">
     <button class="tab active" id="tabUrl" onclick="switchTab('url')">&#x1F517; URL</button>
+    <button class="tab" id="tabBatch" onclick="switchTab('batch')">&#x1F4CB; Batch</button>
     <button class="tab" id="tabTxt" onclick="switchTab('txt')">&#x1F4C4; Paste Text</button>
   </div>
+
   <div class="card">
+
+    <!-- URL tab -->
     <div id="paneUrl">
       <div class="label">Job Listing URL</div>
       <input type="url" id="urlIn" placeholder="https://www.reed.co.uk/jobs/... or any job board URL" />
@@ -68,6 +85,27 @@ button { padding: 8px 15px; border-radius: 7px; border: none; font-size: 0.84rem
       <div id="urlMsg"></div>
       <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
     </div>
+
+    <!-- Batch tab -->
+    <div id="paneBatch" style="display:none">
+      <div class="label">Batch URLs &mdash; one per line</div>
+      <textarea id="batchIn" placeholder="https://www.reed.co.uk/jobs/role-1/...&#10;https://www.linkedin.com/jobs/view/...&#10;https://www.indeed.com/viewjob?..."></textarea>
+      <div class="btn-row">
+        <button class="btn-a" id="batchAddBtn" onclick="batchAdd()">&#x2795; Add to Queue</button>
+        <button class="btn-c" onclick="reset()">&#x2715; Clear</button>
+      </div>
+      <div id="batchMsg"></div>
+      <div id="batchQueue" style="margin-top:12px"></div>
+      <div id="batchControls" style="display:none; margin-top:10px">
+        <div class="btn-row">
+          <button class="btn-a" id="batchRunBtn" onclick="batchRun()">&#x25B6; Process All</button>
+          <button class="btn-c" onclick="batchClear()">&#x2715; Clear Queue</button>
+        </div>
+        <div class="batch-summary" id="batchSummary"></div>
+      </div>
+    </div>
+
+    <!-- Paste Text tab -->
     <div id="paneTxt" style="display:none">
       <div class="label">Paste Job Description</div>
       <textarea id="txtIn" placeholder="Paste job title, company, description, requirements..."></textarea>
@@ -77,43 +115,45 @@ button { padding: 8px 15px; border-radius: 7px; border: none; font-size: 0.84rem
       </div>
       <div id="txtMsg"></div>
     </div>
+
   </div>
   <div id="resultArea"></div>
 </div>
 <script>
-var PROXY = 'https://notion-hub.caden-spooner47.workers.dev';
-var API   = PROXY + '/anthropic/v1/messages';
-var MODEL = 'claude-sonnet-4-6';
-var JOBS_DS    = '29dc7279-2c19-45f3-a57b-5267620828c6';
+var PROXY      = 'https://notion-hub.caden-spooner47.workers.dev';
+var API        = PROXY + '/anthropic/v1/messages';
+var MODEL      = 'claude-sonnet-4-6';
+var JOBS_DS    = 'e4571db3-d996-4742-9abe-3e102a85f2da';
 var NOTION_API = PROXY + '/notion/v1';
 
 var currentJob = null;
 
+// Batch queue: array of {url, status:'waiting'|'working'|'done'|'error', label}
+var batchQueue = [];
+
 var SYS = 'Extract job listing data and return ONLY this JSON (no markdown):\n' +
-  '{' +
-    '"title":"job title",' +
-    '"company":"company name",' +
-    '"location":"city or remote",' +
-    '"contractType":"Full-time or Part-time or Contract or Volunteer or Other",' +
-    '"salary":"salary info or null",' +
-    '"deadline":"YYYY-MM-DD if found else null",' +
-    '"description":"2-3 sentence summary of the role",' +
-    '"requirements":["req1","req2","req3"],' +
-    '"jobType":"one of: Football Coaching or Athletic Training / S&C or Education / Teaching or Youth Work / Social Dev or Data Analysis / Research or Other"' +
-  '}\n' +
+  '{"title":"job title","company":"company name","location":"city or remote",' +
+  '"contractType":"Full-time or Part-time or Contract or Volunteer or Other",' +
+  '"salary":"salary info or null","deadline":"YYYY-MM-DD if found else null",' +
+  '"description":"2-3 sentence summary of the role","requirements":["req1","req2","req3"],' +
+  '"jobType":"one of: Football Coaching or Athletic Training / S&C or Education / Teaching or Youth Work / Social Dev or Data Analysis / Research or Other"}\n' +
   'jobType: Football Coaching=coaching/football/soccer; Athletic Training=S&C/conditioning/sports science; Education=teaching/school/college; Youth Work=youth worker/community/charity; Data Analysis=data analyst/researcher/analytics; Other=anything else.';
 
+// ── Tab switching ────────────────────────────────────────────────
 function switchTab(t) {
-  document.getElementById('paneUrl').style.display = t === 'url' ? '' : 'none';
-  document.getElementById('paneTxt').style.display = t === 'txt' ? '' : 'none';
-  document.getElementById('tabUrl').className = 'tab' + (t === 'url' ? ' active' : '');
-  document.getElementById('tabTxt').className = 'tab' + (t === 'txt' ? ' active' : '');
+  document.getElementById('paneUrl').style.display   = t === 'url'   ? '' : 'none';
+  document.getElementById('paneBatch').style.display = t === 'batch' ? '' : 'none';
+  document.getElementById('paneTxt').style.display   = t === 'txt'   ? '' : 'none';
+  document.getElementById('tabUrl').className   = 'tab' + (t === 'url'   ? ' active' : '');
+  document.getElementById('tabBatch').className = 'tab' + (t === 'batch' ? ' active' : '');
+  document.getElementById('tabTxt').className   = 'tab' + (t === 'txt'   ? ' active' : '');
 }
 
-function setMsg(id, html) { document.getElementById(id).innerHTML = html; }
-function setResult(html) { document.getElementById('resultArea').innerHTML = html; }
-function spin(msg) { return '<div class="spin-wrap"><div class="spin"></div>' + msg + '</div>'; }
-function setBar(pct) { var b = document.getElementById('bar'); b.style.display = ''; document.getElementById('fill').style.width = pct + '%'; }
+// ── Helpers ──────────────────────────────────────────────────────
+function setMsg(id, html)  { document.getElementById(id).innerHTML = html; }
+function setResult(html)   { document.getElementById('resultArea').innerHTML = html; }
+function spin(msg)         { return '<div class="spin-wrap"><div class="spin"></div>' + msg + '</div>'; }
+function setBar(pct)       { var b = document.getElementById('bar'); b.style.display = ''; document.getElementById('fill').style.width = pct + '%'; }
 
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -138,6 +178,7 @@ function parseResponse(raw, sourceUrl) {
   } catch(e) { return null; }
 }
 
+// ── Single URL ───────────────────────────────────────────────────
 function parseUrl() {
   var url = document.getElementById('urlIn').value.trim();
   if (!url) { setMsg('urlMsg', '<p class="err">Please enter a URL.</p>'); return; }
@@ -151,9 +192,7 @@ function parseUrl() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 800,
-      system: SYS,
+      model: MODEL, max_tokens: 800, system: SYS,
       tools: [{ type: 'web_search_20250305', name: 'web_search' }],
       messages: [{ role: 'user', content: 'Fetch and extract the job listing from: ' + url }]
     })
@@ -178,6 +217,7 @@ function parseUrl() {
   });
 }
 
+// ── Paste Text ───────────────────────────────────────────────────
 function parseTxt() {
   var txt = document.getElementById('txtIn').value.trim();
   if (!txt) { setMsg('txtMsg', '<p class="err">Please paste some job listing text.</p>'); return; }
@@ -186,7 +226,8 @@ function parseTxt() {
   setResult('');
   currentJob = null;
 
-  post({ model: MODEL, max_tokens: 800, system: SYS, messages: [{ role: 'user', content: 'Extract job listing from:\n\n' + txt.slice(0, 4000) }] })
+  post({ model: MODEL, max_tokens: 800, system: SYS,
+    messages: [{ role: 'user', content: 'Extract job listing from:\n\n' + txt.slice(0, 4000) }] })
   .then(function(raw) {
     var job = parseResponse(raw, '');
     if (!job || !job.title) throw new Error('Could not extract job details.');
@@ -198,11 +239,150 @@ function parseTxt() {
   .finally(function() { document.getElementById('parseTxtBtn').disabled = false; });
 }
 
+// ── Batch ────────────────────────────────────────────────────────
+function batchAdd() {
+  var raw = document.getElementById('batchIn').value.trim();
+  if (!raw) { setMsg('batchMsg', '<p class="err">Please enter at least one URL.</p>'); return; }
+  var lines = raw.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+  var added = 0;
+  lines.forEach(function(url) {
+    // Avoid exact duplicates already in queue
+    var exists = false;
+    for (var i = 0; i < batchQueue.length; i++) {
+      if (batchQueue[i].url === url) { exists = true; break; }
+    }
+    if (!exists) {
+      // Derive a short label from the URL hostname + path
+      var label = url;
+      try { label = new URL(url).hostname.replace('www.','') + '...'; } catch(e) {}
+      batchQueue.push({ url: url, label: label, status: 'waiting' });
+      added++;
+    }
+  });
+  document.getElementById('batchIn').value = '';
+  setMsg('batchMsg', added > 0
+    ? '<p class="ok">&#x2795; ' + added + ' URL' + (added !== 1 ? 's' : '') + ' added to queue.</p>'
+    : '<p class="err">All URLs were already in the queue.</p>');
+  renderQueue();
+}
+
+function batchClear() {
+  batchQueue = [];
+  renderQueue();
+  setMsg('batchMsg', '');
+  setResult('');
+}
+
+function renderQueue() {
+  var container = document.getElementById('batchQueue');
+  var controls  = document.getElementById('batchControls');
+  if (!batchQueue.length) { container.innerHTML = ''; controls.style.display = 'none'; return; }
+
+  controls.style.display = '';
+  var done    = batchQueue.filter(function(q) { return q.status === 'done'; }).length;
+  var errors  = batchQueue.filter(function(q) { return q.status === 'error'; }).length;
+  var waiting = batchQueue.filter(function(q) { return q.status === 'waiting'; }).length;
+
+  document.getElementById('batchSummary').textContent =
+    batchQueue.length + ' URLs — ' + done + ' saved, ' + errors + ' errors, ' + waiting + ' waiting';
+
+  var html = '';
+  for (var i = 0; i < batchQueue.length; i++) {
+    var q = batchQueue[i];
+    var statusClass = 'q-' + q.status;
+    var statusText  = q.status === 'waiting' ? 'Waiting'
+                    : q.status === 'working' ? 'Processing...'
+                    : q.status === 'done'    ? 'Saved'
+                    : 'Error';
+    var removeBtn = (q.status === 'waiting' || q.status === 'error')
+      ? '<button class="q-remove" onclick="batchRemove(' + i + ')" title="Remove">&#x2715;</button>'
+      : '';
+    html += '<div class="queue-item" id="qi-' + i + '">' +
+      '<span class="q-url" title="' + esc(q.url) + '">' + esc(q.label || q.url) + '</span>' +
+      '<span class="q-status ' + statusClass + '">' + statusText + '</span>' +
+      removeBtn +
+      '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function batchRemove(i) {
+  batchQueue.splice(i, 1);
+  renderQueue();
+}
+
+function batchRun() {
+  var waiting = batchQueue.filter(function(q) { return q.status === 'waiting' || q.status === 'error'; });
+  if (!waiting.length) { setMsg('batchMsg', '<p class="err">No jobs waiting to process.</p>'); return; }
+
+  var btn = document.getElementById('batchRunBtn');
+  btn.disabled = true;
+  btn.textContent = 'Processing...';
+  setResult('');
+
+  // Process sequentially to avoid rate limits
+  var idx = 0;
+  function next() {
+    // Find next waiting/error item
+    while (idx < batchQueue.length && batchQueue[idx].status !== 'waiting' && batchQueue[idx].status !== 'error') {
+      idx++;
+    }
+    if (idx >= batchQueue.length) {
+      btn.disabled = false;
+      btn.innerHTML = '&#x25B6; Process All';
+      var done   = batchQueue.filter(function(q) { return q.status === 'done'; }).length;
+      var errors = batchQueue.filter(function(q) { return q.status === 'error'; }).length;
+      setMsg('batchMsg', '<p class="ok">&#x2705; Done — ' + done + ' saved' + (errors ? ', ' + errors + ' failed' : '') + '.</p>');
+      renderQueue();
+      return;
+    }
+
+    var item = batchQueue[idx];
+    item.status = 'working';
+    renderQueue();
+
+    fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: MODEL, max_tokens: 800, system: SYS,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: 'Fetch and extract the job listing from: ' + item.url }]
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) throw new Error(d.error.message);
+      var raw = d.content.filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('');
+      var job = parseResponse(raw, item.url);
+      if (!job || !job.title) throw new Error('Could not extract job details');
+      return saveJob(job);
+    })
+    .then(function() {
+      item.status = 'done';
+      item.label  = item.label; // keep label
+    })
+    .catch(function(e) {
+      item.status = 'error';
+      item.label  = item.label;
+      console.error('Batch error for ' + item.url + ':', e.message);
+    })
+    .finally(function() {
+      renderQueue();
+      idx++;
+      // Small delay between requests to avoid rate limits
+      setTimeout(next, 800);
+    });
+  }
+  next();
+}
+
+// ── Result rendering ─────────────────────────────────────────────
 function deadlineBadge(dl) {
   if (!dl) return '';
   var days = Math.round((new Date(dl) - new Date()) / 86400000);
-  var cls = days <= 7 ? 'bd-w' : 'bd-o';
-  var txt = days < 0 ? 'Deadline passed' : days === 0 ? 'TODAY' : days + ' days left';
+  var cls  = days <= 7 ? 'bd-w' : 'bd-o';
+  var txt  = days < 0 ? 'Deadline passed' : days === 0 ? 'TODAY' : days + ' days left';
   return ' <span class="badge ' + cls + '">&#x23F0; ' + esc(txt) + ' (' + esc(dl) + ')</span>';
 }
 
@@ -211,10 +391,10 @@ function renderResult(job) {
   var html = '<div class="card"><div class="result">' +
     '<div class="rtitle">' + esc(job.title) + '</div>' +
     '<div class="rmeta">' +
-      (job.company   ? '<span>&#x1F3E2; ' + esc(job.company)   + '</span>' : '') +
-      (job.location  ? '<span>&#x1F4CD; ' + esc(job.location)  + '</span>' : '') +
-      (job.contractType ? '<span>' + esc(job.contractType) + '</span>' : '') +
-      (job.salary    ? '<span>&#x1F4B0; ' + esc(job.salary)    + '</span>' : '') +
+      (job.company      ? '<span>&#x1F3E2; ' + esc(job.company)      + '</span>' : '') +
+      (job.location     ? '<span>&#x1F4CD; ' + esc(job.location)     + '</span>' : '') +
+      (job.contractType ? '<span>'            + esc(job.contractType) + '</span>' : '') +
+      (job.salary       ? '<span>&#x1F4B0; ' + esc(job.salary)       + '</span>' : '') +
     '</div>' +
     '<span class="badge ba">&#x1F916; ' + esc(job.jobType || 'Other') + '</span>' +
     deadlineBadge(job.deadline) +
@@ -222,7 +402,7 @@ function renderResult(job) {
     (reqs ? '<div class="rlabel">Key Requirements</div><ul class="rlist">' + reqs + '</ul>' : '') +
     '</div>' +
     '<div class="actions">' +
-      '<button class="btn-b" id="saveBtn" onclick="saveToWaitingRoom()">&#x2795; Add to Waiting Room</button>' +
+      '<button class="btn-b" id="saveBtn" onclick="saveSingle()">&#x2795; Add to Waiting Room</button>' +
       '<button class="btn-c" onclick="reset()">&#x2715; Discard</button>' +
     '</div>' +
     '<div id="saveMsg"></div>' +
@@ -230,77 +410,68 @@ function renderResult(job) {
   setResult(html);
 }
 
-function buildNotionChildren(j) {
-  var rows = [
-    ['Organisation', j.company || ''],
-    ['Location', j.location || ''],
-    ['Contract', j.contractType || ''],
-    ['Salary', j.salary || 'Not specified'],
-    ['Deadline', j.deadline || 'Not specified'],
-    ['Job Type', j.jobType || '']
-  ];
-  var tableRows = rows.map(function(row) {
-    return {
-      type: 'table_row',
-      table_row: { cells: [[{type:'text',text:{content:row[0]}}], [{type:'text',text:{content:row[1]}}]] }
-    };
-  });
-
-  var reqItems = (j.requirements || []).map(function(r) {
-    return { type: 'numbered_list_item', numbered_list_item: { rich_text: [{type:'text',text:{content:r}}] } };
-  });
-
-  return [
-    { type: 'heading_2', heading_2: { rich_text: [{type:'text',text:{content:'Role Overview'}}] } },
-    { type: 'table', table: { table_width: 2, has_column_header: false, has_row_header: true, children: tableRows } },
-    { type: 'heading_2', heading_2: { rich_text: [{type:'text',text:{content:'Description'}}] } },
-    { type: 'paragraph', paragraph: { rich_text: [{type:'text',text:{content: j.description || ''}}] } },
-    { type: 'heading_2', heading_2: { rich_text: [{type:'text',text:{content:'Key Requirements'}}] } }
-  ].concat(reqItems.length ? reqItems : [
-    { type: 'paragraph', paragraph: { rich_text: [{type:'text',text:{content:'No requirements extracted.'}}] } }
-  ]).concat([
-    { type: 'heading_2', heading_2: { rich_text: [{type:'text',text:{content:'\u2709\ufe0f Cover Letter Draft'}}] } },
-    { type: 'callout', callout: { rich_text: [{type:'text',text:{content:'Cover letter not yet generated. Open the Waiting Room page in Claude and ask it to process this entry.'}}], icon: {type:'emoji',emoji:'\u23f3'} } },
-    { type: 'heading_2', heading_2: { rich_text: [{type:'text',text:{content:'\uD83C\uDFAF CV Fit Assessment'}}] } },
-    { type: 'callout', callout: { rich_text: [{type:'text',text:{content:'Fit not yet assessed. Open the Waiting Room page in Claude and ask it to process this entry.'}}], icon: {type:'emoji',emoji:'\uD83C\uDFAF'} } },
-    { type: 'heading_2', heading_2: { rich_text: [{type:'text',text:{content:'\uD83D\uDCCE Application Feedback'}}] } },
-    { type: 'callout', callout: { rich_text: [{type:'text',text:{content:'Add feedback here once you receive a response.'}}], icon: {type:'emoji',emoji:'\uD83D\uDCCE'} } }
-  ]);
-}
-
-function buildNotionProperties(j, today) {
+// ── Notion save ──────────────────────────────────────────────────
+function buildProperties(j, today) {
   var props = {
-    'Role Title': { title: [{type:'text',text:{content: j.title || ''}}] },
-    'Organisation': { rich_text: [{type:'text',text:{content: j.company || ''}}] },
-    'Location':     { rich_text: [{type:'text',text:{content: j.location || ''}}] },
-    'Stage':        { select: { name: '\u23f3 Waiting Room' } },
-    'Cover Letter Template': { select: { name: j.jobType || 'Other' } },
-    'Tasks Pending': { select: { name: '\u23f3 Fit + Cover Letter' } },
-    'Notes':        { rich_text: [{type:'text',text:{content: j.description || ''}}] },
-    'Date Applied': { date: { start: today } }
+    'Role Title':             { title:     [{ type: 'text', text: { content: j.title || '' } }] },
+    'Organisation':           { rich_text: [{ type: 'text', text: { content: j.company || '' } }] },
+    'Location':               { rich_text: [{ type: 'text', text: { content: j.location || '' } }] },
+    'Stage':                  { select:    { name: '\u23f3 Waiting Room' } },
+    'Cover Letter Template':  { select:    { name: j.jobType || 'Other' } },
+    'Tasks Pending':          { select:    { name: '\u23f3 Fit + Cover Letter' } },
+    'Notes':                  { rich_text: [{ type: 'text', text: { content: j.description || '' } }] },
+    'Date Applied':           { date:      { start: today } }
   };
-  if (j.sourceUrl) props['Job Posting'] = { url: j.sourceUrl };
-  if (j.deadline)  props['Application Deadline'] = { date: { start: j.deadline } };
+  if (j.sourceUrl) props['Job Posting']           = { url:  j.sourceUrl };
+  if (j.deadline)  props['Application Deadline']  = { date: { start: j.deadline } };
   return props;
 }
 
-function saveToWaitingRoom() {
-  if (!currentJob) return;
-  var btn = document.getElementById('saveBtn');
-  btn.disabled = true;
-  btn.textContent = 'Saving...';
-  setMsg('saveMsg', spin('Adding to Waiting Room in Notion...'));
+function buildChildren(j) {
+  var rows = [
+    ['Organisation', j.company || ''],
+    ['Location',     j.location || ''],
+    ['Contract',     j.contractType || ''],
+    ['Salary',       j.salary || 'Not specified'],
+    ['Deadline',     j.deadline || 'Not specified'],
+    ['Job Type',     j.jobType || '']
+  ];
+  var tableRows = rows.map(function(row) {
+    return { type: 'table_row', table_row: { cells: [
+      [{ type: 'text', text: { content: row[0] } }],
+      [{ type: 'text', text: { content: row[1] } }]
+    ] } };
+  });
+  var reqItems = (j.requirements || []).map(function(r) {
+    return { type: 'numbered_list_item', numbered_list_item: { rich_text: [{ type: 'text', text: { content: r } }] } };
+  });
+  return [
+    { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: 'Role Overview' } }] } },
+    { type: 'table', table: { table_width: 2, has_column_header: false, has_row_header: true, children: tableRows } },
+    { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: 'Description' } }] } },
+    { type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: j.description || '' } }] } },
+    { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: 'Key Requirements' } }] } }
+  ].concat(reqItems.length ? reqItems : [
+    { type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: 'No requirements extracted.' } }] } }
+  ]).concat([
+    { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '\u2709\ufe0f Cover Letter Draft' } }] } },
+    { type: 'callout', callout: { rich_text: [{ type: 'text', text: { content: 'Cover letter not yet generated. Open the Waiting Room page in Claude and ask it to process this entry.' } }], icon: { type: 'emoji', emoji: '\u23f3' } } },
+    { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '\uD83C\uDFAF CV Fit Assessment' } }] } },
+    { type: 'callout', callout: { rich_text: [{ type: 'text', text: { content: 'Fit not yet assessed. Open the Waiting Room page in Claude and ask it to process this entry.' } }], icon: { type: 'emoji', emoji: '\uD83C\uDFAF' } } },
+    { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '\uD83D\uDCCE Application Feedback' } }] } },
+    { type: 'callout', callout: { rich_text: [{ type: 'text', text: { content: 'Add feedback here once you receive a response.' } }], icon: { type: 'emoji', emoji: '\uD83D\uDCCE' } } }
+  ]);
+}
 
-  var j = currentJob;
-  var today = new Date().toISOString().split('T')[0];
-
+// Core save function — returns a Promise, used by both single and batch
+function saveJob(j) {
+  var today   = new Date().toISOString().split('T')[0];
   var payload = {
-    parent: { database_id: JOBS_DS },
-    properties: buildNotionProperties(j, today),
-    children: buildNotionChildren(j)
+    parent:     { database_id: JOBS_DS },
+    properties: buildProperties(j, today),
+    children:   buildChildren(j)
   };
-
-  fetch(NOTION_API + '/pages', {
+  return fetch(NOTION_API + '/pages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -308,6 +479,20 @@ function saveToWaitingRoom() {
   .then(function(r) { return r.json(); })
   .then(function(d) {
     if (d.object === 'error') throw new Error(d.message);
+    return d;
+  });
+}
+
+// Single save (from URL / Paste Text result card)
+function saveSingle() {
+  if (!currentJob) return;
+  var btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  setMsg('saveMsg', spin('Adding to Waiting Room in Notion...'));
+
+  saveJob(currentJob)
+  .then(function(d) {
     var pageUrl = d.url || ('https://www.notion.so/' + (d.id || '').replace(/-/g, ''));
     setMsg('saveMsg', '<p class="ok">&#x2705; Added to Waiting Room! <a href="' + pageUrl + '" target="_blank" style="color:#16a34a">Open in Notion &#x2192;</a></p>');
     btn.textContent = '&#x2705; Saved';
@@ -319,17 +504,20 @@ function saveToWaitingRoom() {
   });
 }
 
+// ── Reset ────────────────────────────────────────────────────────
 function reset() {
-  document.getElementById('urlIn').value = '';
-  document.getElementById('txtIn').value = '';
-  setMsg('urlMsg', '');
-  setMsg('txtMsg', '');
+  document.getElementById('urlIn').value  = '';
+  document.getElementById('txtIn').value  = '';
+  document.getElementById('batchIn').value = '';
+  setMsg('urlMsg',   '');
+  setMsg('txtMsg',   '');
+  setMsg('batchMsg', '');
   document.getElementById('bar').style.display = 'none';
   setResult('');
   currentJob = null;
 }
 
-// Bookmarklet prefill
+// ── Bookmarklet prefill ──────────────────────────────────────────
 (function() {
   var p = new URLSearchParams(window.location.search).get('prefill');
   if (!p) return;
