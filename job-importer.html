@@ -117,10 +117,12 @@
 
 <script>
 // Repo: https://cadenspooner47.github.io/notion-hub/job-importer.html
-const NOTION_MCP = 'https://mcp.notion.com/mcp';
+// Proxy: replace PROXY_URL below with your Cloudflare Worker URL
+const PROXY_URL  = 'notion-hub.caden-spooner47.workers.dev';
+const NOTION_MCP = PROXY_URL + '/notion/mcp';
 const JOBS_DS    = '29dc7279-2c19-45f3-a57b-5267620828c6';
 const MODEL      = 'claude-sonnet-4-6';
-const API        = 'https://api.anthropic.com/v1/messages';
+const API        = PROXY_URL + '/anthropic/v1/messages';
 
 const COVER_LETTER_TYPES = ['Football Coaching','Athletic Training / S&C','Education / Teaching','Youth Work / Social Dev','Data Analysis / Research','Other'];
 
