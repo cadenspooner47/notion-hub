@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recipe Importer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f7f6f3; color: #37352f;
+    min-height: 100vh; padding: 24px 16px;
+  }
+
+  .container { max-width: 740px; margin: 0 auto; }
+  h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { color: #787774; margin-bottom: 24px; font-size: 0.93rem; }
+
+  /* ── Cards ── */
+  .card {
+    background: white; border-radius: 12px; padding: 20px;
+    margin-bottom: 14px; border: 1px solid #e9e9e7;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .card-title {
+    font-weight: 700; font-size: 0.82rem; text-transform: uppercase;
+    letter-spacing: 0.07em; color: #9ca3af; margin-bottom: 12px;
+  }
+
+  /* ── URL input ── */
+  .url-wrap { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type="url"], textarea {
+    flex: 1; min-width: 0; border: 1px solid #e3e3e1; border-radius: 8px;
+    padding: 10px 12px; font-size: 0.9rem; font-family: inherit;
+    background: #fbfaf8; transition: border-color 0.2s;
+  }
+  input[type="url"]:focus, textarea:focus { outline: none; border-color: #a78bfa; }
+  textarea { resize: vertical; min-height: 80px; width: 100%; }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 14px; }
+  .tab {
+    padding: 7px 14px; border-radius: 7px; border: none; cursor: pointer;
+    font-size: 0.85rem; font-weight: 600; background: #f3f4f6; color: #6b7280;
+    transition: all 0.15s;
+  }
+  .tab.active { background: #ede9fe; color: #5b21b6; }
+
+  /* ── Buttons ── */
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  button {
+    padding: 9px 18px; border-radius: 8px; border: none;
+    font-size: 0.88rem; font-weight: 600; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-primary { background: #7c3aed; color: white; }
+  .btn-primary:hover:not(:disabled) { background: #6d28d9; }
+  .btn-primary:disabled { background: #c4b5fd; cursor: not-allowed; }
+  .btn-green { background: #16a34a; color: white; }
+  .btn-green:hover:not(:disabled) { background: #15803d; }
+  .btn-green:disabled { background: #86efac; cursor: not-allowed; }
+  .btn-ghost { background: #f3f4f6; color: #374151; }
+  .btn-ghost:hover { background: #e5e7eb; }
+  .btn-danger { background: #fee2e2; color: #991b1b; }
+  .btn-danger:hover { background: #fecaca; }
+
+  /* ── Loading / status ── */
+  .loading { display: flex; align-items: center; gap: 8px; color: #787774; font-size: 0.88rem; padding: 10px 0; }
+  .spinner {
+    width: 16px; height: 16px; border: 2px solid #e5e7eb;
+    border-top-color: #7c3aed; border-radius: 50%;
+    animation: spin 0.7s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .msg-error { color: #ef4444; font-size: 0.85rem; margin-top: 8px; }
+  .msg-success { color: #16a34a; font-size: 0.85rem; margin-top: 8px; font-weight: 600; }
+
+  /* ── Progress bar ── */
+  .progress-bar { height: 4px; background: #e5e7eb; border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .progress-fill { height: 100%; background: #7c3aed; border-radius: 3px; transition: width 0.35s ease; }
+
+  /* ── Queue list ── */
+  .queue-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 0; border-bottom: 1px solid #f3f3f1; font-size: 0.85rem;
+  }
+  .queue-item:last-child { border-bottom: none; }
+  .queue-url { flex: 1; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .queue-status { font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+  .qs-waiting { color: #9ca3af; }
+  .qs-processing { color: #7c3aed; }
+  .qs-done { color: #16a34a; }
+  .qs-error { color: #ef4444; }
+  .queue-remove { background: none; border: none; color: #d1d5db; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+  .queue-remove:hover { color: #ef4444; background: #fee2e2; }
+
+  /* ── Preview card ── */
+  .preview-card {
+    border: 1px solid #e9e9e7; border-radius: 10px;
+    padding: 18px; margin-bottom: 12px; background: white;
+  }
+  .preview-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+  .preview-title { font-weight: 700; font-size: 1rem; flex: 1; }
+  .preview-title input {
+    font-weight: 700; font-size: 1rem; border: 1px solid transparent;
+    border-radius: 6px; padding: 2px 6px; width: 100%; background: transparent;
+  }
+  .preview-title input:hover { border-color: #e3e3e1; background: #fbfaf8; }
+  .preview-title input:focus { outline: none; border-color: #a78bfa; background: white; }
+
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .meta-item label { font-size: 0.72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 3px; }
+  .meta-item select, .meta-item input[type="text"] {
+    width: 100%; border: 1px solid #e3e3e1; border-radius: 6px;
+    padding: 6px 8px; font-size: 0.83rem; background: #fbfaf8; font-family: inherit;
+  }
+  .meta-item select:focus, .meta-item input[type="text"]:focus { outline: none; border-color: #a78bfa; }
+
+  .ingredients-list { margin: 0; padding-left: 18px; font-size: 0.85rem; line-height: 1.7; color: #374151; }
+  .instructions-list { margin: 0; padding-left: 18px; font-size: 0.85rem; line-height: 1.7; color: #374151; }
+
+  .section-label {
+    font-size: 0.75rem; font-weight: 700; color: #9ca3af;
+    text-transform: uppercase; letter-spacing: 0.06em; margin: 12px 0 6px;
+  }
+
+  .badge {
+    font-size: 0.7rem; font-weight: 600; padding: 2px 8px;
+    border-radius: 20px; white-space: nowrap;
+  }
+  .badge-purple { background: #ede9fe; color: #5b21b6; }
+  .badge-green  { background: #dcfce7; color: #166534; }
+  .badge-orange { background: #ffedd5; color: #9a3412; }
+
+  .empty { color: #9ca3af; font-size: 0.88rem; padding: 16px 0; text-align: center; }
+
+  .divider { height: 1px; background: #f3f3f1; margin: 10px 0; }
+
+  /* ── Bulk queue action bar ── */
+  .action-bar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; background: #fafaf9; border-radius: 8px;
+    border: 1px solid #f0f0ee; margin-bottom: 10px;
+  }
+  .action-bar span { font-size: 0.82rem; color: #787774; flex: 1; }
+
+  @media (max-width: 500px) {
+    .meta-grid { grid-template-columns: 1fr; }
+    .preview-header { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📥 Recipe Importer</h1>
+  <p class="subtitle">Paste a URL (or raw text) to parse and save directly to your Notion Recipes database.</p>
+
+  <!-- Mode tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchMode('url')">🔗 Single URL</button>
+    <button class="tab" onclick="switchMode('batch')">📋 Batch URLs</button>
+    <button class="tab" onclick="switchMode('text')">📄 Paste Text</button>
+  </div>
+
+  <!-- Input card -->
+  <div class="card" id="inputCard">
+
+    <!-- Single URL mode -->
+    <div id="modeUrl">
+      <div class="card-title">Recipe URL</div>
+      <div class="url-wrap">
+        <input type="url" id="singleUrl" placeholder="https://www.bbcgoodfood.com/recipes/chicken-tikka-masala" />
+        <button class="btn-primary" onclick="parseSingle()" id="parseBtn">✨ Parse Recipe</button>
+      </div>
+      <div id="singleStatus"></div>
+      <div class="progress-bar" id="singleProgress" style="display:none"><div class="progress-fill" id="singleFill" style="width:0%"></div></div>
+    </div>
+
+    <!-- Batch URL mode -->
+    <div id="modeBatch" style="display:none">
+      <div class="card-title">Batch URLs — one per line</div>
+      <textarea id="batchUrls" placeholder="https://www.bbcgoodfood.com/recipes/chicken-tikka-masala&#10;https://www.jamieoliver.com/recipes/pasta-recipes/spaghetti-carbonara&#10;https://www.deliciousmagazine.co.uk/recipes/lasagne"></textarea>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="loadBatch()" id="batchLoadBtn">📋 Load to Queue</button>
+      </div>
+    </div>
+
+    <!-- Paste text mode -->
+    <div id="modeText" style="display:none">
+      <div class="card-title">Paste Recipe Text</div>
+      <textarea id="pasteText" style="min-height:160px" placeholder="Paste the full recipe text here — title, ingredients, instructions and all. Works when a site blocks scraping."></textarea>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="parseText()" id="textBtn">✨ Parse Pasted Text</button>
+      </div>
+      <div id="textStatus"></div>
+      <div class="progress-bar" id="textProgress" style="display:none"><div class="progress-fill" id="textFill" style="width:0%"></div></div>
+    </div>
+
+  </div>
+
+  <!-- Queue (batch mode) -->
+  <div class="card" id="queueCard" style="display:none">
+    <div class="card-title">Queue</div>
+    <div class="action-bar">
+      <span id="queueSummary">0 URLs loaded</span>
+      <button class="btn-primary" onclick="processQueue()" id="processQueueBtn">▶ Process All</button>
+      <button class="btn-ghost" onclick="clearQueue()">✕ Clear</button>
+    </div>
+    <div id="queueList"></div>
+    <div id="queueStatus"></div>
+  </div>
+
+  <!-- Preview area -->
+  <div id="previewArea"></div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────────
+const NOTION_MCP    = 'https://mcp.notion.com/mcp';
+const RECIPES_DS    = '66ed8a88-0fcf-400a-8836-fe6e97ecbc91';
+const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
+const MODEL         = 'claude-sonnet-4-20250514';
+
+const MEAL_TYPES  = ['Breakfast','Lunch','Dinner','Snack','Dessert','Drinks','Sides'];
+const CUISINES    = ['British','Italian','Asian','Mexican','American','Mediterranean','Indian','French','Middle Eastern','Other'];
+const DIFFICULTY  = ['Easy','Medium','Hard'];
+
+let queue   = [];   // {url, status, recipe}
+let previews = [];  // parsed recipes awaiting save
+
+// ─────────────────────────────────────────────
+// Utilities
+// ─────────────────────────────────────────────
+function el(id) { return document.getElementById(id); }
+function setHtml(id, html) { el(id).innerHTML = html; }
+function show(id) { el(id).style.display = ''; }
+function hide(id) { el(id).style.display = 'none'; }
+function setProgress(fillId, barId, pct) {
+  show(barId);
+  el(fillId).style.width = pct + '%';
+}
+function loading(msg) {
+  return `<div class="loading"><div class="spinner"></div>${msg}</div>`;
+}
+
+// ─────────────────────────────────────────────
+// Tab switching
+// ─────────────────────────────────────────────
+function switchMode(mode) {
+  ['url','batch','text'].forEach(m => {
+    el('mode' + m.charAt(0).toUpperCase() + m.slice(1)).style.display = m === mode ? '' : 'none';
+    document.querySelectorAll('.tab')[['url','batch','text'].indexOf(m)].classList.toggle('active', m === mode);
+  });
+  hide('queueCard');
+  if (mode !== 'batch') setHtml('previewArea', '');
+}
+
+// ─────────────────────────────────────────────
+// Claude API helpers
+// ─────────────────────────────────────────────
+async function callClaude(messages, system, useMCP) {
+  const body = {
+    model: MODEL, max_tokens: 1000,
+    system: system || '',
+    messages
+  };
+  if (useMCP) body.mcp_servers = [{ type: 'url', url: NOTION_MCP, name: 'notion' }];
+
+  const res  = await fetch(ANTHROPIC_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+
+  const texts   = data.content.filter(b => b.type === 'text').map(b => b.text);
+  const toolRes = data.content.filter(b => b.type === 'mcp_tool_result').map(b => b.content?.[0]?.text || '');
+  return [...texts, ...toolRes].join('\n');
+}
+
+async function fetchUrl(url) {
+  const raw = await callClaude([{
+    role: 'user',
+    content: `Fetch the webpage at this URL and return the full visible text content of the page. URL: ${url}`
+  }], 'You are a web scraping assistant. Use the web_fetch tool or equivalent to retrieve the page content. Return the raw text of the page with no additional commentary.', false);
+  return raw;
+}
+
+const PARSE_SYSTEM = `You are a recipe parsing assistant. Extract recipe data from the provided text and return ONLY a single JSON object with these exact keys:
+{
+  "title": "Recipe name",
+  "mealType": "one of: Breakfast, Lunch, Dinner, Snack, Dessert, Drinks, Sides",
+  "cuisine": "one of: British, Italian, Asian, Mexican, American, Mediterranean, Indian, French, Middle Eastern, Other",
+  "difficulty": "one of: Easy, Medium, Hard",
+  "prepTime": 15,
+  "cookTime": 30,
+  "servings": 4,
+  "ingredients": ["ingredient 1 with quantity", "ingredient 2 with quantity"],
+  "instructions": ["Step 1 text", "Step 2 text"],
+  "notes": "any tips or variations",
+  "sourceUrl": "original URL if known"
+}
+Return ONLY the JSON. No markdown fences, no preamble, no explanation.`;
+
+async function parseRecipeText(text, sourceUrl) {
+  const raw = await callClaude([{
+    role: 'user',
+    content: `Parse this recipe content into structured JSON.\n\nSource URL: ${sourceUrl || 'unknown'}\n\nContent:\n${text.slice(0, 8000)}`
+  }], PARSE_SYSTEM, false);
+
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error('Could not parse recipe structure from page');
+  return JSON.parse(match[0]);
+}
+
+// ─────────────────────────────────────────────
+// Save to Notion
+// ─────────────────────────────────────────────
+async function saveRecipeToNotion(recipe) {
+  const ingredientsBullet = recipe.ingredients.map(i => `- ${i}`).join('\n');
+  const instructionsNum   = recipe.instructions.map((s, i) => `${i + 1}. ${s}`).join('\n');
+
+  const content = `## 📋 Overview
+
+| | |
+|---|---|
+| 🍽️ Meal Type | ${recipe.mealType || ''} |
+| 🌍 Cuisine | ${recipe.cuisine || ''} |
+| ⏱️ Prep Time | ${recipe.prepTime ? recipe.prepTime + ' mins' : ''} |
+| 🔥 Cook Time | ${recipe.cookTime ? recipe.cookTime + ' mins' : ''} |
+| 👥 Servings | ${recipe.servings || ''} |
+| 📊 Difficulty | ${recipe.difficulty || ''} |
+
+---
+
+## 🛒 Ingredients
+
+${ingredientsBullet}
+
+---
+
+## 👨‍🍳 Instructions
+
+${instructionsNum}
+
+---
+
+## 🔄 Ingredient Replacements
+
+> Link swaps from the Ingredient Replacements database here.
+
+| Original Ingredient | Replacement | Reason | Works Well |
+|---|---|---|---|
+| | | | |
+
+---
+
+## 📝 Notes
+
+> ${recipe.notes || 'Add tips, variations, or storage advice here.'}`;
+
+  const props = {
+    "Recipe":            recipe.title,
+    "Meal Type":         recipe.mealType   || null,
+    "Cuisine":           recipe.cuisine    || null,
+    "Difficulty":        recipe.difficulty || null,
+    "Prep Time (mins)":  recipe.prepTime   || null,
+    "Cook Time (mins)":  recipe.cookTime   || null,
+    "Servings":          recipe.servings   || null,
+    "Source / URL":      recipe.sourceUrl  || null,
+    "Ingredients":       recipe.ingredients.join(', '),
+    "Instructions":      recipe.instructions.join('\n'),
+    "Tried & Tested":    "__NO__",
+  };
+
+  const result = await callClaude([{
+    role: 'user',
+    content: `Create a new page in the Notion Recipes database (data source collection://${RECIPES_DS}) with these properties and content.
+
+Properties (JSON):
+${JSON.stringify(props, null, 2)}
+
+Page content (Notion Markdown):
+${content}
+
+Confirm once created with the page URL.`
+  }], 'You are a Notion assistant. Create the page using the Notion MCP tools. Confirm with the page URL when done.', true);
+
+  const urlMatch = result.match(/https:\/\/www\.notion\.so\/[a-z0-9]+/i);
+  return urlMatch ? urlMatch[0] : null;
+}
+
+// ─────────────────────────────────────────────
+// Single URL mode
+// ─────────────────────────────────────────────
+async function parseSingle() {
+  const url = el('singleUrl').value.trim();
+  if (!url) { setHtml('singleStatus', '<p class="msg-error">Please enter a URL.</p>'); return; }
+
+  const btn = el('parseBtn');
+  btn.disabled = true; btn.textContent = 'Parsing…';
+  setHtml('singleStatus', loading('Fetching page…'));
+  setProgress('singleFill', 'singleProgress', 10);
+
+  try {
+    const pageText = await fetchUrl(url);
+    setHtml('singleStatus', loading('Extracting recipe data…'));
+    setProgress('singleFill', 'singleProgress', 55);
+
+    const recipe = await parseRecipeText(pageText, url);
+    recipe.sourceUrl = url;
+
+    setProgress('singleFill', 'singleProgress', 100);
+    setHtml('singleStatus', '<p class="msg-success">✅ Recipe parsed! Review below before saving.</p>');
+
+    previews = [{ recipe, saved: false }];
+    renderPreviews();
+
+  } catch(e) {
+    setHtml('singleStatus', `<p class="msg-error">Error: ${e.message}</p>`);
+    hide('singleProgress');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Parse Recipe';
+  }
+}
+
+// ─────────────────────────────────────────────
+// Paste text mode
+// ─────────────────────────────────────────────
+async function parseText() {
+  const text = el('pasteText').value.trim();
+  if (!text) { setHtml('textStatus', '<p class="msg-error">Please paste some recipe text.</p>'); return; }
+
+  const btn = el('textBtn');
+  btn.disabled = true; btn.textContent = 'Parsing…';
+  setHtml('textStatus', loading('Extracting recipe data…'));
+  setProgress('textFill', 'textProgress', 30);
+
+  try {
+    const recipe = await parseRecipeText(text, '');
+    setProgress('textFill', 'textProgress', 100);
+    setHtml('textStatus', '<p class="msg-success">✅ Recipe parsed! Review below before saving.</p>');
+    previews = [{ recipe, saved: false }];
+    renderPreviews();
+  } catch(e) {
+    setHtml('textStatus', `<p class="msg-error">Error: ${e.message}</p>`);
+    hide('textProgress');
+  } finally {
+    btn.disabled = false; btn.textContent = '✨ Parse Pasted Text';
+  }
+}
+
+// ─────────────────────────────────────────────
+// Batch queue mode
+// ─────────────────────────────────────────────
+function loadBatch() {
+  const lines = el('batchUrls').value.split('\n').map(l => l.trim()).filter(l => l.startsWith('http'));
+  if (!lines.length) { alert('No valid URLs found — make sure each URL is on its own line.'); return; }
+  queue = lines.map(url => ({ url, status: 'waiting', recipe: null }));
+  show('queueCard');
+  renderQueue();
+}
+
+function renderQueue() {
+  el('queueSummary').textContent = `${queue.length} URL${queue.length !== 1 ? 's' : ''} — ${queue.filter(q => q.status === 'done').length} done`;
+  setHtml('queueList', queue.map((item, i) => `
+    <div class="queue-item" id="qi-${i}">
+      <div class="queue-url">${item.url}</div>
+      <span class="queue-status qs-${item.status}">${
+        item.status === 'waiting'    ? '⏳ Waiting'    :
+        item.status === 'processing' ? '⚡ Parsing…'   :
+        item.status === 'done'       ? '✅ Done'       : '❌ Error'
+      }</span>
+      ${item.status === 'waiting' ? `<button class="queue-remove" onclick="removeFromQueue(${i})">✕</button>` : ''}
+    </div>`).join(''));
+}
+
+function removeFromQueue(i) {
+  queue.splice(i, 1);
+  renderQueue();
+}
+
+function clearQueue() {
+  queue = [];
+  hide('queueCard');
+  setHtml('previewArea', '');
+}
+
+async function processQueue() {
+  const btn = el('processQueueBtn');
+  btn.disabled = true; btn.textContent = '⏳ Processing…';
+  previews = [];
+
+  for (let i = 0; i < queue.length; i++) {
+    if (queue[i].status === 'done') continue;
+    queue[i].status = 'processing';
+    renderQueue();
+
+    try {
+      const pageText = await fetchUrl(queue[i].url);
+      const recipe   = await parseRecipeText(pageText, queue[i].url);
+      recipe.sourceUrl = queue[i].url;
+      queue[i].recipe  = recipe;
+      queue[i].status  = 'done';
+      previews.push({ recipe, saved: false });
+    } catch(e) {
+      queue[i].status = 'error';
+    }
+    renderQueue();
+    renderPreviews();
+  }
+
+  btn.disabled = false; btn.textContent = '▶ Process All';
+  setHtml('queueStatus', `<p class="msg-success">✅ Done — ${previews.length} recipe${previews.length !== 1 ? 's' : ''} ready to review below.</p>`);
+}
+
+// ─────────────────────────────────────────────
+// Preview / edit / save
+// ─────────────────────────────────────────────
+function renderPreviews() {
+  if (!previews.length) { setHtml('previewArea', ''); return; }
+
+  const hasUnsaved = previews.some(p => !p.saved);
+
+  let html = `
+    <div class="card">
+      <div class="card-title">Preview & Edit — ${previews.length} Recipe${previews.length !== 1 ? 's' : ''}</div>
+      ${hasUnsaved ? `
+        <div class="action-bar" style="margin-bottom:14px">
+          <span>${previews.filter(p => !p.saved).length} unsaved</span>
+          <button class="btn-green" onclick="saveAll()" id="saveAllBtn">💾 Save All to Notion</button>
+        </div>` : '<p class="msg-success" style="margin-bottom:14px">✅ All recipes saved to Notion!</p>'}
+  `;
+
+  previews.forEach((p, idx) => {
+    const r = p.recipe;
+    html += `
+    <div class="preview-card" id="preview-${idx}">
+      <div class="preview-header">
+        <div class="preview-title">
+          <input type="text" value="${escHtml(r.title || '')}" onchange="previews[${idx}].recipe.title = this.value" />
+        </div>
+        ${p.saved
+          ? '<span class="badge badge-green">✅ Saved</span>'
+          : `<button class="btn-green" onclick="saveSingle(${idx})" id="saveBtn-${idx}">💾 Save</button>`}
+      </div>
+
+      <div class="meta-grid">
+        <div class="meta-item">
+          <label>Meal Type</label>
+          <select onchange="previews[${idx}].recipe.mealType = this.value">
+            ${MEAL_TYPES.map(t => `<option ${r.mealType === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="meta-item">
+          <label>Cuisine</label>
+          <select onchange="previews[${idx}].recipe.cuisine = this.value">
+            ${CUISINES.map(c => `<option ${r.cuisine === c ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="meta-item">
+          <label>Difficulty</label>
+          <select onchange="previews[${idx}].recipe.difficulty = this.value">
+            ${DIFFICULTY.map(d => `<option ${r.difficulty === d ? 'selected' : ''}>${d}</option>`).join('')}
+          </select>
+        </div>
+        <div class="meta-item">
+          <label>Servings</label>
+          <input type="text" value="${r.servings || ''}" onchange="previews[${idx}].recipe.servings = parseInt(this.value) || null" />
+        </div>
+        <div class="meta-item">
+          <label>Prep (mins)</label>
+          <input type="text" value="${r.prepTime || ''}" onchange="previews[${idx}].recipe.prepTime = parseInt(this.value) || null" />
+        </div>
+        <div class="meta-item">
+          <label>Cook (mins)</label>
+          <input type="text" value="${r.cookTime || ''}" onchange="previews[${idx}].recipe.cookTime = parseInt(this.value) || null" />
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="section-label">🛒 Ingredients</div>
+      <ul class="ingredients-list">
+        ${(r.ingredients || []).map(i => `<li>${escHtml(i)}</li>`).join('')}
+      </ul>
+
+      <div class="section-label">👨‍🍳 Instructions</div>
+      <ol class="instructions-list">
+        ${(r.instructions || []).map(s => `<li>${escHtml(s)}</li>`).join('')}
+      </ol>
+
+      ${r.notes ? `<div class="section-label">📝 Notes</div><p style="font-size:0.85rem;color:#555">${escHtml(r.notes)}</p>` : ''}
+      ${r.sourceUrl ? `<div style="margin-top:10px;font-size:0.78rem;color:#9ca3af">Source: <a href="${r.sourceUrl}" target="_blank" style="color:#7c3aed">${r.sourceUrl}</a></div>` : ''}
+
+      <div id="saveStatus-${idx}"></div>
+    </div>`;
+  });
+
+  html += '</div>';
+  setHtml('previewArea', html);
+}
+
+async function saveSingle(idx) {
+  const btn = el(`saveBtn-${idx}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  setHtml(`saveStatus-${idx}`, loading('Saving to Notion…'));
+
+  try {
+    const notionUrl = await saveRecipeToNotion(previews[idx].recipe);
+    previews[idx].saved = true;
+    setHtml(`saveStatus-${idx}`, `<p class="msg-success">✅ Saved! ${notionUrl ? `<a href="${notionUrl}" target="_blank" style="color:#16a34a">Open in Notion →</a>` : ''}</p>`);
+    renderPreviews();
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Save'; }
+    setHtml(`saveStatus-${idx}`, `<p class="msg-error">Error: ${e.message}</p>`);
+  }
+}
+
+async function saveAll() {
+  const saveAllBtn = el('saveAllBtn');
+  if (saveAllBtn) { saveAllBtn.disabled = true; saveAllBtn.textContent = 'Saving…'; }
+
+  for (let i = 0; i < previews.length; i++) {
+    if (previews[i].saved) continue;
+    await saveSingle(i);
+  }
+}
+
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>
