@@ -373,9 +373,12 @@ function callClaude(userMsg, system, maxTok) {
 // ── Fit assessment ────────────────────────────────────────────────
 function assessFit(e) {
   var tmpl = CL_TEMPLATES[e.jobType] || CL_TEMPLATES['Other'];
-  var prompt = 'Evaluate how well this CV matches the job. Return ONLY JSON: {"score":4,"label":"score label","summary":"one sentence"}\n\n' +
-    'Score 1=Poor fit, 2=Weak, 3=Moderate, 4=Strong, 5=Excellent\n' +
-    'Label format: "score_emoji score_num - Description" e.g. "4 - Strong fit"\n\n' +
+  var prompt = 'Evaluate how well this CV matches the job. Return ONLY JSON with no markdown or preamble:\n' +
+    '{"score":4,"label":"⭐⭐⭐⭐ 4 — Strong fit","summary":"One concise sentence explaining the score.","strengths":["strength 1","strength 2","strength 3"],"gaps":["gap 1","gap 2"]}\n\n' +
+    'Score scale: 1=Poor fit (wrong field/major gaps), 2=Weak (some relevance, major gaps), 3=Moderate (decent match, notable gaps), 4=Strong (most requirements met), 5=Excellent (near-perfect match)\n' +
+    'Label format must exactly match one of: "⭐ 1 — Poor fit", "⭐⭐ 2 — Weak fit", "⭐⭐⭐ 3 — Moderate fit", "⭐⭐⭐⭐ 4 — Strong fit", "⭐⭐⭐⭐⭐ 5 — Excellent fit"\n' +
+    'strengths: 2-4 specific CV points that match this role\n' +
+    'gaps: 1-3 requirements the CV does not fully meet (or empty array if none)\n\n' +
     'CV:\n' + CV + '\n\n' +
     'JOB:\n' +
     'Role: ' + (e.title || '') + '\n' +
@@ -384,12 +387,12 @@ function assessFit(e) {
     'Description: ' + (e.notes || '') + '\n' +
     'Template guidance: ' + tmpl;
 
-  return callClaude(prompt, 'Return only a JSON object. No markdown, no preamble.', 400)
+  return callClaude(prompt, 'Return only a JSON object. No markdown, no preamble, no backticks.', 600)
     .then(function(raw) {
-      var m = raw.match(/\{[\s\S]*?\}/);
-      if (!m) return { score: 3, label: '3 - Moderate fit', summary: 'Could not assess automatically.' };
+      var m = raw.match(/\{[\s\S]*\}/);
+      if (!m) return { score: 3, label: '\u2b50\u2b50\u2b50 3 \u2014 Moderate fit', summary: 'Could not assess automatically.', strengths: [], gaps: [] };
       try { return JSON.parse(m[0]); }
-      catch(e2) { return { score: 3, label: '3 - Moderate fit', summary: 'Could not assess automatically.' }; }
+      catch(e2) { return { score: 3, label: '\u2b50\u2b50\u2b50 3 \u2014 Moderate fit', summary: 'Could not assess automatically.', strengths: [], gaps: [] }; }
     });
 }
 
@@ -419,36 +422,82 @@ function generateCoverLetter(e) {
 
 // ── Save results back to Notion entry ────────────────────────────
 function saveResultsToNotion(e, fit, letter) {
-  // Update properties
+  var scoreNum   = fit.score || 3;
+  var stars      = ['','\u2b50','\u2b50\u2b50','\u2b50\u2b50\u2b50','\u2b50\u2b50\u2b50\u2b50','\u2b50\u2b50\u2b50\u2b50\u2b50'][scoreNum] || '\u2b50\u2b50\u2b50';
+  var scoreColor = scoreNum >= 4 ? 'green_background' : scoreNum >= 3 ? 'yellow_background' : 'red_background';
+  var scoreDesc  = ['','Poor fit - significant gaps','Weak fit - some relevance but major gaps','Moderate fit - decent match with notable gaps','Strong fit - most requirements met','Excellent fit - near-perfect match'][scoreNum] || 'Moderate fit';
+  var summary    = fit.summary || '';
+
   var props = {
-    'CV Fit Score':   { select:    { name: fit.label } },
-    'Fit Summary':    { rich_text: [{ type: 'text', text: { content: fit.summary || '' } }] },
-    'Tasks Pending':  { select:    { name: '\u2705 Ready to review' } }
+    'CV Fit Score':  { select:    { name: fit.label } },
+    'Fit Summary':   { rich_text: [{ type: 'text', text: { content: summary } }] },
+    'Tasks Pending': { select:    { name: '\u2705 Ready to review' } }
   };
 
   return notionPatch('/pages/' + e.id, { properties: props })
-    .then(function(d) {
-      if (d.object === 'error') throw new Error(d.message);
-      // Now update the page content - append cover letter to existing blocks
-      // We use a separate blocks append call
-      var blocks = [
-        { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '\u2709\ufe0f Cover Letter Draft' } }] } },
-        { type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: letter } }] } },
-        { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '\uD83C\uDFAF CV Fit Assessment' } }] } },
-        { type: 'callout', callout: {
-          rich_text: [{ type: 'text', text: { content: fit.label + ' — ' + (fit.summary || '') } }],
-          icon: { type: 'emoji', emoji: '\uD83C\uDFAF' },
-          color: fit.score >= 4 ? 'green_background' : fit.score >= 3 ? 'yellow_background' : 'red_background'
-        }}
-      ];
-      return fetch(NOTION_API + '/blocks/' + e.id + '/children', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ children: blocks })
-      }).then(function(r) { return r.json(); });
-    });
-}
+  .then(function(d) {
+    if (d.object === 'error') throw new Error(d.message);
 
+    var blocks = [
+      { type: 'divider', divider: {} },
+      { type: 'heading_1', heading_1: { rich_text: [{ type: 'text', text: { content: '\uD83C\uDFAF CV Fit Assessment' } }] } },
+      { type: 'callout', callout: {
+        rich_text: [{ type: 'text', text: { content: stars + '  ' + fit.label + '\n' + scoreDesc } }],
+        icon: { type: 'emoji', emoji: '\uD83C\uDFAF' },
+        color: scoreColor
+      }},
+      { type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: 'Summary' } }] } },
+      { type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: summary } }] } },
+      { type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: '\u2705 What matches' } }] } },
+    ];
+
+    // Strengths bullets
+    var strArr = fit.strengths && fit.strengths.length ? fit.strengths : ['Review CV against role requirements'];
+    for (var si = 0; si < strArr.length; si++) {
+      blocks.push({ type: 'bulleted_list_item', bulleted_list_item: { rich_text: [{ type: 'text', text: { content: strArr[si] } }] } });
+    }
+    blocks.push({ type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: '\u26a0\ufe0f Gaps to address' } }] } });
+
+    // Gaps bullets
+    var gapArr = fit.gaps && fit.gaps.length ? fit.gaps : ['No significant gaps identified'];
+    for (var gi = 0; gi < gapArr.length; gi++) {
+      blocks.push({ type: 'bulleted_list_item', bulleted_list_item: { rich_text: [{ type: 'text', text: { content: gapArr[gi] } }] } });
+    }
+
+    // Continue adding cover letter section blocks
+    blocks.push({ type: 'divider', divider: {} });
+    blocks.push({ type: 'heading_1', heading_1: { rich_text: [{ type: 'text', text: { content: '\u2709\ufe0f Cover Letter Draft' } }] } });
+    blocks.push({ type: 'callout', callout: {
+      rich_text: [{ type: 'text', text: { content: 'Review and personalise before sending. Replace generic phrases with specifics about this role and organisation.' } }],
+      icon: { type: 'emoji', emoji: '\uD83D\uDCDD' },
+      color: 'blue_background'
+    }});
+
+    // Split letter into paragraphs
+    var paras = letter.split('\n\n');
+    for (var i = 0; i < paras.length; i++) {
+      var para = paras[i].trim();
+      if (para) {
+        blocks.push({ type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: para } }] } });
+      }
+    }
+
+    // Feedback section
+    blocks.push({ type: 'divider', divider: {} });
+    blocks.push({ type: 'heading_1', heading_1: { rich_text: [{ type: 'text', text: { content: '\uD83D\uDCCE Application Feedback' } }] } });
+    blocks.push({ type: 'callout', callout: {
+      rich_text: [{ type: 'text', text: { content: 'Fill in once you receive a response. Tick Feedback Received in the properties panel.' } }],
+      icon: { type: 'emoji', emoji: '\uD83D\uDCCE' },
+      color: 'gray_background'
+    }});
+
+    return fetch(NOTION_API + '/blocks/' + e.id + '/children', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ children: blocks })
+    }).then(function(r) { return r.json(); });
+  });
+}
 // ── Process a single entry ────────────────────────────────────────
 function processEntry(idx) {
   var e = getEntry(idx);
