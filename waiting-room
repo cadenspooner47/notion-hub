@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="frame-ancestors *;">
+<title>Waiting Room</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f7f6f3; color: #37352f; min-height: 100vh; padding: 16px; }
+.container { max-width: 720px; margin: 0 auto; }
+h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 2px; }
+.subtitle { color: #787774; font-size: 0.82rem; margin-bottom: 14px; }
+button { border: none; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; padding: 6px 12px; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-amber  { background: #d97706; color: white; }
+.btn-amber:hover:not(:disabled)  { background: #b45309; }
+.btn-green  { background: #16a34a; color: white; }
+.btn-green:hover:not(:disabled)  { background: #15803d; }
+.btn-red    { background: #f3f4f6; color: #ef4444; }
+.btn-red:hover:not(:disabled)    { background: #fee2e2; }
+.btn-ghost  { background: #f3f4f6; color: #374151; }
+.btn-ghost:hover:not(:disabled)  { background: #e5e7eb; }
+.btn-blue   { background: #eff6ff; color: #1d4ed8; }
+.btn-blue:hover:not(:disabled)   { background: #dbeafe; }
+.top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.top-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.count-badge { font-size: 0.75rem; font-weight: 600; background: #fef3c7; color: #92400e; padding: 3px 9px; border-radius: 20px; }
+.spin-wrap { display: flex; align-items: center; gap: 7px; color: #787774; font-size: 0.83rem; padding: 20px 0; justify-content: center; }
+.spin { width: 14px; height: 14px; border: 2px solid #e5e7eb; border-top-color: #d97706; border-radius: 50%; animation: sp 0.7s linear infinite; flex-shrink: 0; }
+@keyframes sp { to { transform: rotate(360deg); } }
+.err { color: #ef4444; font-size: 0.82rem; text-align: center; padding: 16px 0; }
+.empty { color: #9ca3af; text-align: center; font-size: 0.86rem; padding: 30px 0; }
+/* Cards */
+.card { background: white; border-radius: 10px; border: 1px solid #e9e9e7; margin-bottom: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.card.processed { border-color: #bbf7d0; }
+.card.discarded { opacity: 0.45; pointer-events: none; }
+.card-header { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px 10px; }
+.card-num { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: #fef3c7; color: #92400e; font-size: 0.72rem; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+.card-title { flex: 1; }
+.role-title { font-weight: 700; font-size: 0.92rem; margin-bottom: 2px; }
+.org-line { font-size: 0.78rem; color: #6b7280; }
+.badge { display: inline-block; font-size: 0.67rem; font-weight: 600; padding: 1px 6px; border-radius: 20px; margin-right: 4px; }
+.badge-pink   { background: #fce7f3; color: #9d174d; }
+.badge-amber  { background: #fef3c7; color: #92400e; }
+.badge-green  { background: #dcfce7; color: #166534; }
+.badge-red    { background: #fee2e2; color: #991b1b; }
+.badge-blue   { background: #dbeafe; color: #1e40af; }
+.badge-gray   { background: #f3f4f6; color: #6b7280; }
+.badge-yellow { background: #fefce8; color: #854d0e; }
+.card-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 5px; }
+.card-actions { display: flex; gap: 6px; padding: 0 14px 12px; flex-wrap: wrap; }
+.card-body { padding: 0 14px 12px; border-top: 1px solid #f3f4f6; margin-top: 4px; }
+.section-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #9ca3af; margin: 10px 0 4px; }
+.desc-text { font-size: 0.8rem; line-height: 1.55; color: #374151; }
+.fit-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; }
+.fit-score { flex-shrink: 0; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+.fit-summary { font-size: 0.78rem; color: #6b7280; line-height: 1.4; flex: 1; }
+.cl-preview { background: #f9fafb; border: 1px solid #e9e9e7; border-radius: 6px; padding: 10px; margin-top: 6px; font-size: 0.77rem; line-height: 1.55; color: #374151; max-height: 140px; overflow-y: auto; white-space: pre-wrap; }
+.status-msg { font-size: 0.78rem; padding: 5px 0; }
+.status-msg.ok  { color: #16a34a; }
+.status-msg.err { color: #ef4444; }
+/* Process all bar */
+.process-bar { background: white; border: 1px solid #e9e9e7; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; display: none; }
+.pb-label { font-size: 0.8rem; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.pb-track { height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+.pb-fill  { height: 100%; background: #d97706; border-radius: 2px; transition: width 0.4s; }
+.pb-sub   { font-size: 0.74rem; color: #9ca3af; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>&#x23F3; Waiting Room</h1>
+  <p class="subtitle">Jobs waiting for fit scoring and cover letter generation before moving to Drafting.</p>
+  <div class="top-bar">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="count-badge" id="countBadge">Loading...</span>
+      <button class="btn-ghost" onclick="loadEntries()" id="refreshBtn">&#x21BB; Refresh</button>
+    </div>
+    <div class="top-actions">
+      <button class="btn-amber" onclick="processAll()" id="processAllBtn">&#x26A1; Process All Pending</button>
+    </div>
+  </div>
+  <div class="process-bar" id="processBar">
+    <div class="pb-label" id="pbLabel">Processing...</div>
+    <div class="pb-track"><div class="pb-fill" id="pbFill" style="width:0%"></div></div>
+    <div class="pb-sub" id="pbSub"></div>
+  </div>
+  <div id="listArea"><div class="spin-wrap"><div class="spin"></div>Loading Waiting Room...</div></div>
+</div>
+<script>
+var PROXY      = 'https://notion-hub.caden-spooner47.workers.dev';
+var API        = PROXY + '/anthropic/v1/messages';
+var NOTION_API = PROXY + '/notion/v1';
+var JOBS_DB    = 'e4571db3-d996-4742-9abe-3e102a85f2da';
+var MODEL      = 'claude-sonnet-4-6';
+
+// Entries loaded from Notion
+var entries = [];
+
+// ── CV + Template data ────────────────────────────────────────────
+var CV = 'APPLICANT: Caden Spooner\n' +
+'Contact: +49 178 911 9997 | caden.spooner47@gmail.com | Dusseldorf, Germany\n' +
+'Languages: English (Fluent), Spanish (Fluent), German (Proficient), Dutch (Conversational)\n\n' +
+'EDUCATION:\n' +
+'- MSc Football Science, Southampton Solent University (Sep 2024 - Oct 2025, Pass). Dissertation: PRISMA 2020 systematic review on bio-banding, 1122 papers across 5 databases. Submitted for publication August 2025.\n' +
+'- BSc Liberal Arts & Sciences, Maastricht University (2019-2023). MATLAB projects: insulin-regulated glucose dynamics (1M ODE simulation) and genome-scale metabolic modelling of arrhythmogenic cardiomyopathy using COBRA Toolbox.\n' +
+'- Associate Student Sport Sciences, UCLan Cyprus (2022-2023). Thesis: injury detection in professional athletes.\n' +
+'- IB Diploma, International School of Dusseldorf (2016-2018).\n\n' +
+'EXPERIENCE:\n' +
+'- Teaching Assistant (Elementary), ISD (Feb 2026-Jun 2026). Classroom support, independent lesson coverage, multilingual.\n' +
+'- Assistant Trainer B-Jugend (U16), SG Unterrath (Mar 2026-present). FC Schalke 04 partner academy. S&C, plyometrics, conditioning, load monitoring.\n' +
+'- Youth Trainer, Bayer/KFC Uerdingen (Dec 2023-Sep 2024, Jul 2025-Mar 2026). U11-U14 Leistungsklasse. Lead U17 to 2nd in Sonderliga. Video performance analysis.\n' +
+'- First Team Assistant Trainer, AFC Stoneham Women (Dec 2024-Jul 2025). Athletic development, evidence-based physical programmes, post-match analysis.\n' +
+'- Trainer, Itchen College Girls (Nov 2024-May 2025). Physical development, load management, performance analysis.\n' +
+'- Camp Coordinator, Fussball Futures (Aug 2021-present). Camps for children 6-12. Safeguarding, logistics, mentoring junior staff.\n' +
+'- Head Coach, DBSV Red Socks (Sep 2021-May 2023). Technical, physical, tactical sessions. Data-informed coaching.\n' +
+'- Board President, DBSV Red Socks (Aug 2020-Jul 2021). Club operations during COVID-19.\n\n' +
+'QUALIFICATIONS:\n' +
+'- DFB: C-Lizenz Profil Jugend (completing March 2026), Basis-Coach, Kindertrainerzertifikat, Torwarttrainerzertifikat, Basis-Vereinsmanager\n' +
+'- BASES accreditation partial completion; reapplication in progress\n' +
+'- FA Safeguarding Certificate, Emergency First Aid\n' +
+'- World Congress on Science and Soccer (2025, Glasgow)\n' +
+'- PhD research under consideration with Dr Nuno Nunes: bio-banding and holistic talent development\n\n' +
+'SKILLS: Python, MATLAB, R/RStudio, ODE modelling, PRISMA systematic review, Veo, GPS/LPS monitoring (Catapult), athlete monitoring systems';
+
+var CL_TEMPLATES = {
+  'Football Coaching': 'Para 1: Express interest in [org] as [role]. Sport science + coaching/youth dev across Europe. Club mission. Para 2: Maastricht (physiology, injury, data analysis, UCLan Cyprus thesis on injury detection). MSc Football Science Southampton Solent (physiology, biomechanics, talent ID, team leadership, rehab). Dissertation PRISMA 2020 bio-banding systematic review, submitted Aug 2025, PhD proposal with Dr Nuno Nunes. Para 3 (PERSONALISE): 1-2 specific experiences. Options: SG Unterrath/KFC Uerdingen for academy; AFC Stoneham for senior women; Itchen College for education-linked; Fussball Futures for grassroots. Mention DFB C-Lizenz (completing Mar 2026) for German clubs. Para 4: Coached U11s to senior women across cultures/languages, third language. Scientific grounding, DFB licences, evidence-based youth dev.',
+  'Athletic Training / S&C': 'Para 1: Interest in [org] as [role]. Sport science + athletic dev/performance monitoring across Europe. Germany, Netherlands, UK cross-cultural adaptability. Para 2: Maastricht physiology, injury, quantitative data analysis, MATLAB (glucose dynamics, genome-scale metabolic modelling COBRA Toolbox, R). UCLan Cyprus thesis on injury detection using isometric strength testing. MSc Football Science: physiology, biomechanics, S&C, rehab, training demands, GPS/LPS Catapult. Partial BASES accreditation. Para 3 (PERSONALISE): On-pitch/gym athletic dev, load management, data-driven programming. Options: Catapult/GPS from MSc; warm-up/athletic dev at AFC Stoneham and SG Unterrath; conditioning at Itchen College and KFC Uerdingen. Para 4: Pedagogical dimension of athletic training - practitioners are educators. Cross-cultural coaching, diverse relationships.',
+  'Education / Teaching': 'Para 1: Apply for [role] at [school]. TA at ISD - school where completed own secondary education. Drawn to [school] because [IB curriculum/multilingual/inclusive]. Para 2: Current TA at ISD - classroom support elementary level, different learning needs, independent lesson coverage. CPD when available. Consistency, clear communication, sensitivity. Para 3: Coaching 6-17 years across England, Germany, Netherlands. Structured progressive programmes, differentiating for developmental stages, pastoral support. Itchen College Girls (formal college); Fussball Futures (safeguarding, parent communication). Para 4: Fluent English/Spanish, proficient German, conversational Dutch. Committed to professional dev in education.',
+  'Youth Work / Social Dev': 'Para 1: Interest in [role] at [org]. Several years with young people in sport, education, community settings in Germany, Netherlands, England. Drawn to [org] because [community-first/social dev/underserved youth]. Para 2: Fussball Futures - multi-day camps children 6-12 since 2021. Programme design, safeguarding, logistics, parent comms, supervising junior staff. TA at ISD - structured classroom support, different learning needs. Para 3: Coaching U11-U17 Germany and senior women England - relationships outside the activity. Supporting players through setbacks, diverse squad dynamics. MSc dissertation bio-banding - psychological and sociological outcomes critically under-studied. FA Safeguarding, Emergency First Aid. Para 4: Fluent English/Spanish, proficient German, conversational Dutch. Four countries.',
+  'Data Analysis / Research': 'Para 1: Apply for [role] at [org]. Quantitative scientific training + applied performance analysis + hands-on coaching - unusual technical and practical combination. Para 2: Maastricht quantitative methods: MATLAB R2021a - 1M parameter combinations E-DES ODE model insulin-regulated glucose dynamics, PID controller, parallelised computation. MATLAB COBRA Toolbox: genome-scale metabolic models arrhythmogenic cardiomyopathy from RNA-seq, GIMME/iMAT/E-Flux, gene ontology DAVID/REVIGO/PathVisio, preprocessing in R. MSc: GPS/LPS Catapult. Para 3 (PERSONALISE): GPS load data KFC Uerdingen; Veo video analysis scouting; performance tracking. MSc dissertation PRISMA 2020 bio-banding, 1122 papers 5 databases, submitted Aug 2025. PhD proposal Dr Nuno Nunes. Para 4: Communicate findings to practitioners - background as coach means knowing questions coaches need answered. Partial BASES accreditation reapplying.',
+  'Other': 'Write a professional tailored cover letter based on the applicant background in sport science, coaching, and research. Match relevant experience to role requirements.'
+};
+
+// ── Helpers ───────────────────────────────────────────────────────
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function spin(msg) { return '<div class="spin-wrap"><div class="spin"></div>' + esc(msg) + '</div>'; }
+
+function fitStyle(score) {
+  var styles = { 1: 'badge-red', 2: 'badge-amber', 3: 'badge-yellow', 4: 'badge-green', 5: 'badge-blue' };
+  return styles[score] || 'badge-gray';
+}
+
+function pendingBadgeClass(p) {
+  if (!p) return 'badge-pink';
+  if (p.indexOf('Ready') >= 0) return 'badge-green';
+  return 'badge-pink';
+}
+
+function deadlineDays(dl) {
+  if (!dl) return null;
+  return Math.round((new Date(dl) - new Date()) / 86400000);
+}
+
+function deadlineBadgeHtml(dl) {
+  if (!dl) return '';
+  var days = deadlineDays(dl);
+  var cls  = days <= 7 ? 'badge-red' : 'badge-green';
+  var txt  = days < 0 ? 'Passed' : days === 0 ? 'TODAY' : days + 'd left';
+  return '<span class="badge ' + cls + '">&#x23F0; ' + esc(txt) + '</span>';
+}
+
+// ── Notion REST helpers ───────────────────────────────────────────
+function notionGet(path) {
+  return fetch(NOTION_API + path, {
+    headers: { 'Content-Type': 'application/json' }
+  }).then(function(r) { return r.json(); });
+}
+
+function notionPatch(path, body) {
+  return fetch(NOTION_API + path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  }).then(function(r) { return r.json(); });
+}
+
+// ── Load Waiting Room entries from Notion ─────────────────────────
+function loadEntries() {
+  document.getElementById('listArea').innerHTML = spin('Loading Waiting Room...');
+  document.getElementById('countBadge').textContent = 'Loading...';
+  document.getElementById('refreshBtn').disabled = true;
+  entries = [];
+
+  fetch(NOTION_API + '/databases/' + JOBS_DB + '/query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filter: { property: 'Stage', select: { equals: '\u23f3 Waiting Room' } },
+      sorts:  [{ property: 'Application Deadline', direction: 'ascending' }],
+      page_size: 50
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.object === 'error') throw new Error(d.message);
+    entries = (d.results || []).map(function(page, i) {
+      var props = page.properties || {};
+      function getText(p) {
+        if (!p) return '';
+        if (p.type === 'title')     return (p.title     || []).map(function(t) { return t.plain_text; }).join('');
+        if (p.type === 'rich_text') return (p.rich_text || []).map(function(t) { return t.plain_text; }).join('');
+        if (p.type === 'select')    return (p.select && p.select.name) || '';
+        if (p.type === 'url')       return p.url || '';
+        if (p.type === 'date')      return (p.date && p.date.start) || '';
+        return '';
+      }
+      return {
+        index:      i + 1,
+        id:         page.id,
+        url:        page.url,
+        title:      getText(props['Role Title']),
+        org:        getText(props['Organisation']),
+        location:   getText(props['Location']),
+        jobType:    getText(props['Cover Letter Template']),
+        stage:      getText(props['Stage']),
+        pending:    getText(props['Tasks Pending']),
+        fitScore:   getText(props['CV Fit Score']),
+        fitSummary: getText(props['Fit Summary']),
+        deadline:   getText(props['Application Deadline']),
+        notes:      getText(props['Notes']),
+        // runtime state
+        processing: false,
+        processed:  false,
+        discarded:  false,
+        generatedLetter: '',
+        generatedFit: null,
+        statusMsg: ''
+      };
+    });
+    renderList();
+  })
+  .catch(function(e) {
+    document.getElementById('listArea').innerHTML = '<p class="err">Error loading entries: ' + esc(e.message) + '</p>';
+    document.getElementById('countBadge').textContent = 'Error';
+  })
+  .finally(function() {
+    document.getElementById('refreshBtn').disabled = false;
+  });
+}
+
+// ── Render all cards ──────────────────────────────────────────────
+function renderList() {
+  var pending = entries.filter(function(e) { return !e.discarded && e.pending !== '\u2705 Ready to review'; });
+  document.getElementById('countBadge').textContent = entries.length + ' job' + (entries.length !== 1 ? 's' : '');
+  document.getElementById('processAllBtn').disabled = pending.length === 0;
+
+  if (!entries.length) {
+    document.getElementById('listArea').innerHTML = '<p class="empty">&#x2705; Nothing in the Waiting Room right now.</p>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < entries.length; i++) {
+    html += renderCard(entries[i]);
+  }
+  document.getElementById('listArea').innerHTML = html;
+}
+
+function renderCard(e) {
+  var pendingCls = pendingBadgeClass(e.pending);
+  var pendingTxt = e.pending || '\u23f3 Fit + Cover Letter';
+  var isReady    = e.pending === '\u2705 Ready to review' || e.processed;
+  var cardCls    = e.discarded ? 'card discarded' : (isReady || e.processed) ? 'card processed' : 'card';
+
+  var fitHtml = '';
+  if (e.processed && e.generatedFit) {
+    var scoreNum = e.generatedFit.score || 3;
+    fitHtml = '<div class="fit-row">' +
+      '<span class="fit-score badge ' + fitStyle(scoreNum) + '">' + esc(e.generatedFit.label) + '</span>' +
+      '<span class="fit-summary">' + esc(e.generatedFit.summary) + '</span>' +
+      '</div>';
+  } else if (isReady && e.fitScore) {
+    fitHtml = '<div class="fit-row">' +
+      '<span class="fit-score badge ' + fitStyle(parseInt(e.fitScore.charAt(1)) || 3) + '">' + esc(e.fitScore) + '</span>' +
+      '<span class="fit-summary">' + esc(e.fitSummary) + '</span>' +
+      '</div>';
+  }
+
+  var clHtml = '';
+  if (e.processed && e.generatedLetter) {
+    var preview = e.generatedLetter.slice(0, 600) + (e.generatedLetter.length > 600 ? '...' : '');
+    clHtml = '<div class="section-label">Cover Letter Preview</div>' +
+      '<div class="cl-preview">' + esc(preview) + '</div>';
+  }
+
+  var processBtn = '';
+  if (!isReady && !e.processed) {
+    processBtn = '<button class="btn-amber" onclick="processEntry(' + e.index + ')" id="procBtn' + e.index + '"' +
+      (e.processing ? ' disabled' : '') + '>' +
+      (e.processing ? spin('Processing...') : '&#x26A1; Process') + '</button>';
+  }
+  if (e.processed) {
+    processBtn = '<button class="btn-blue" onclick="processEntry(' + e.index + ')" id="procBtn' + e.index + '">&#x21BA; Re-run</button>';
+  }
+
+  var moveBtn = '<button class="btn-green" onclick="moveToDrafting(' + e.index + ')" id="moveBtn' + e.index + '"' +
+    ((!isReady && !e.processed) ? ' disabled title="Run processing first"' : '') + '>&#x2705; Move to Drafting</button>';
+
+  var discardBtn = '<button class="btn-red" onclick="discard(' + e.index + ')" id="discardBtn' + e.index + '">&#x2715; Discard</button>';
+
+  var openBtn = '<a href="' + esc(e.url) + '" target="_blank"><button class="btn-ghost">&#x2197; Open</button></a>';
+
+  var statusHtml = e.statusMsg
+    ? '<div class="status-msg ' + (e.statusMsg.ok ? 'ok' : 'err') + '">' + esc(e.statusMsg.text) + '</div>'
+    : '';
+
+  return '<div class="' + cardCls + '" id="card' + e.index + '">' +
+    '<div class="card-header">' +
+      '<div class="card-num">' + e.index + '</div>' +
+      '<div class="card-title">' +
+        '<div class="role-title">' + esc(e.title || 'Untitled Role') + '</div>' +
+        '<div class="org-line">' + esc(e.org || '') + (e.location ? ' &middot; ' + esc(e.location) : '') + '</div>' +
+        '<div class="card-meta">' +
+          '<span class="badge badge-amber">' + esc(e.jobType || 'Other') + '</span>' +
+          '<span class="badge ' + pendingCls + '">' + esc(pendingTxt) + '</span>' +
+          deadlineBadgeHtml(e.deadline) +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    (fitHtml || clHtml ? '<div class="card-body">' + fitHtml + clHtml + '</div>' : '') +
+    '<div class="card-actions">' +
+      processBtn +
+      moveBtn +
+      discardBtn +
+      openBtn +
+    '</div>' +
+    statusHtml +
+    '</div>';
+}
+
+function refreshCard(idx) {
+  var e = getEntry(idx);
+  if (!e) return;
+  var el = document.getElementById('card' + idx);
+  if (el) el.outerHTML = renderCard(e);
+}
+
+function getEntry(idx) {
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].index === idx) return entries[i];
+  }
+  return null;
+}
+
+function setStatus(e, text, isOk) {
+  e.statusMsg = { text: text, ok: isOk };
+  refreshCard(e.index);
+}
+
+// ── Anthropic API call ────────────────────────────────────────────
+function callClaude(userMsg, system, maxTok) {
+  return fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: maxTok || 1200,
+      system: system || '',
+      messages: [{ role: 'user', content: userMsg }]
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.error) throw new Error(d.error.message);
+    return d.content.filter(function(b) { return b.type === 'text'; }).map(function(b) { return b.text; }).join('');
+  });
+}
+
+// ── Fit assessment ────────────────────────────────────────────────
+function assessFit(e) {
+  var tmpl = CL_TEMPLATES[e.jobType] || CL_TEMPLATES['Other'];
+  var prompt = 'Evaluate how well this CV matches the job. Return ONLY JSON: {"score":4,"label":"score label","summary":"one sentence"}\n\n' +
+    'Score 1=Poor fit, 2=Weak, 3=Moderate, 4=Strong, 5=Excellent\n' +
+    'Label format: "score_emoji score_num - Description" e.g. "4 - Strong fit"\n\n' +
+    'CV:\n' + CV + '\n\n' +
+    'JOB:\n' +
+    'Role: ' + (e.title || '') + '\n' +
+    'Organisation: ' + (e.org || '') + '\n' +
+    'Type: ' + (e.jobType || '') + '\n' +
+    'Description: ' + (e.notes || '') + '\n' +
+    'Template guidance: ' + tmpl;
+
+  return callClaude(prompt, 'Return only a JSON object. No markdown, no preamble.', 400)
+    .then(function(raw) {
+      var m = raw.match(/\{[\s\S]*?\}/);
+      if (!m) return { score: 3, label: '3 - Moderate fit', summary: 'Could not assess automatically.' };
+      try { return JSON.parse(m[0]); }
+      catch(e2) { return { score: 3, label: '3 - Moderate fit', summary: 'Could not assess automatically.' }; }
+    });
+}
+
+// ── Cover letter generation ───────────────────────────────────────
+function generateCoverLetter(e) {
+  var tmpl = CL_TEMPLATES[e.jobType] || CL_TEMPLATES['Other'];
+  var today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  var prompt = 'Write a complete tailored cover letter.\n\n' +
+    'CV:\n' + CV + '\n\n' +
+    'TEMPLATE GUIDANCE for "' + (e.jobType || 'Other') + '" roles:\n' + tmpl + '\n\n' +
+    'JOB:\n' +
+    'Role: ' + (e.title || '') + '\n' +
+    'Organisation: ' + (e.org || '') + '\n' +
+    'Location: ' + (e.location || '') + '\n' +
+    'Type: ' + (e.jobType || '') + '\n' +
+    'Description: ' + (e.notes || '') + '\n\n' +
+    'Today: ' + today + '\n\n' +
+    'Write a complete professional cover letter. Start with the date, then organisation name, then "Dear Hiring Manager,". ' +
+    'Fill ALL placeholders with real content from the CV. Pick the 1-2 most relevant experiences for this specific role. ' +
+    'No placeholder brackets. No editor notes. 4 paragraphs plus opening/closing. End with "Kind regards,\n\nCaden Spooner"';
+
+  return callClaude(prompt,
+    'You are an expert cover letter writer for Caden Spooner. Return only the cover letter text, no preamble.',
+    1400);
+}
+
+// ── Save results back to Notion entry ────────────────────────────
+function saveResultsToNotion(e, fit, letter) {
+  // Update properties
+  var props = {
+    'CV Fit Score':   { select:    { name: fit.label } },
+    'Fit Summary':    { rich_text: [{ type: 'text', text: { content: fit.summary || '' } }] },
+    'Tasks Pending':  { select:    { name: '\u2705 Ready to review' } }
+  };
+
+  return notionPatch('/pages/' + e.id, { properties: props })
+    .then(function(d) {
+      if (d.object === 'error') throw new Error(d.message);
+      // Now update the page content - append cover letter to existing blocks
+      // We use a separate blocks append call
+      var blocks = [
+        { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '\u2709\ufe0f Cover Letter Draft' } }] } },
+        { type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: letter } }] } },
+        { type: 'heading_2', heading_2: { rich_text: [{ type: 'text', text: { content: '\uD83C\uDFAF CV Fit Assessment' } }] } },
+        { type: 'callout', callout: {
+          rich_text: [{ type: 'text', text: { content: fit.label + ' — ' + (fit.summary || '') } }],
+          icon: { type: 'emoji', emoji: '\uD83C\uDFAF' },
+          color: fit.score >= 4 ? 'green_background' : fit.score >= 3 ? 'yellow_background' : 'red_background'
+        }}
+      ];
+      return fetch(NOTION_API + '/blocks/' + e.id + '/children', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ children: blocks })
+      }).then(function(r) { return r.json(); });
+    });
+}
+
+// ── Process a single entry ────────────────────────────────────────
+function processEntry(idx) {
+  var e = getEntry(idx);
+  if (!e) return;
+  e.processing = true;
+  e.statusMsg = { text: 'Assessing fit and writing cover letter...', ok: true };
+  refreshCard(idx);
+
+  var fitResult = null;
+
+  assessFit(e)
+  .then(function(fit) {
+    fitResult = fit;
+    return generateCoverLetter(e);
+  })
+  .then(function(letter) {
+    e.generatedFit    = fitResult;
+    e.generatedLetter = letter;
+    e.pending         = '\u2705 Ready to review';
+    e.fitScore        = fitResult.label;
+    e.fitSummary      = fitResult.summary;
+    return saveResultsToNotion(e, fitResult, letter);
+  })
+  .then(function() {
+    e.processed  = true;
+    e.processing = false;
+    e.statusMsg  = { text: '\u2705 Done — fit scored and cover letter saved to Notion.', ok: true };
+    refreshCard(idx);
+  })
+  .catch(function(err) {
+    e.processing = false;
+    e.statusMsg  = { text: 'Error: ' + err.message, ok: false };
+    refreshCard(idx);
+  });
+}
+
+// ── Process all pending ───────────────────────────────────────────
+function processAll() {
+  var pending = entries.filter(function(e) {
+    return !e.discarded && !e.processed && e.pending !== '\u2705 Ready to review';
+  });
+  if (!pending.length) return;
+
+  var bar = document.getElementById('processBar');
+  bar.style.display = '';
+  document.getElementById('processAllBtn').disabled = true;
+
+  var total = pending.length;
+  var done  = 0;
+
+  function updateBar() {
+    var pct = Math.round((done / total) * 100);
+    document.getElementById('pbFill').style.width  = pct + '%';
+    document.getElementById('pbLabel').textContent = 'Processing ' + done + ' of ' + total + '...';
+    document.getElementById('pbSub').textContent   = pending[done] ? ('Next: ' + (pending[done].title || 'Untitled')) : '';
+  }
+
+  updateBar();
+
+  function next() {
+    if (done >= total) {
+      document.getElementById('pbLabel').textContent = '\u2705 All done — ' + total + ' job' + (total !== 1 ? 's' : '') + ' processed.';
+      document.getElementById('pbSub').textContent   = '';
+      document.getElementById('processAllBtn').disabled = false;
+      return;
+    }
+    var e = pending[done];
+    e.processing = true;
+    e.statusMsg  = { text: 'Processing...', ok: true };
+    refreshCard(e.index);
+
+    var fitResult = null;
+    assessFit(e)
+    .then(function(fit) {
+      fitResult = fit;
+      return generateCoverLetter(e);
+    })
+    .then(function(letter) {
+      e.generatedFit    = fitResult;
+      e.generatedLetter = letter;
+      e.pending         = '\u2705 Ready to review';
+      e.fitScore        = fitResult.label;
+      e.fitSummary      = fitResult.summary;
+      return saveResultsToNotion(e, fitResult, letter);
+    })
+    .then(function() {
+      e.processed  = true;
+      e.processing = false;
+      e.statusMsg  = { text: '\u2705 Done.', ok: true };
+    })
+    .catch(function(err) {
+      e.processing = false;
+      e.statusMsg  = { text: 'Error: ' + err.message, ok: false };
+    })
+    .finally(function() {
+      refreshCard(e.index);
+      done++;
+      updateBar();
+      // 1s gap between jobs to avoid API rate limits
+      setTimeout(next, 1000);
+    });
+  }
+  next();
+}
+
+// ── Move to Drafting ──────────────────────────────────────────────
+function moveToDrafting(idx) {
+  var e = getEntry(idx);
+  if (!e) return;
+  var btn = document.getElementById('moveBtn' + idx);
+  if (btn) btn.disabled = true;
+  setStatus(e, 'Moving to Drafting...', true);
+
+  notionPatch('/pages/' + e.id, { properties: { 'Stage': { select: { name: 'Drafting' } } } })
+  .then(function(d) {
+    if (d.object === 'error') throw new Error(d.message);
+    setStatus(e, '\u2705 Moved to Drafting!', true);
+    setTimeout(function() {
+      // Remove from list after short delay
+      entries = entries.filter(function(x) { return x.index !== idx; });
+      renderList();
+    }, 1500);
+  })
+  .catch(function(err) {
+    setStatus(e, 'Error: ' + err.message, false);
+    if (btn) btn.disabled = false;
+  });
+}
+
+// ── Discard ───────────────────────────────────────────────────────
+function discard(idx) {
+  var e = getEntry(idx);
+  if (!e) return;
+  setStatus(e, 'Discarding...', true);
+
+  notionPatch('/pages/' + e.id, { properties: { 'Stage': { select: { name: 'Withdrawn' } } } })
+  .then(function(d) {
+    if (d.object === 'error') throw new Error(d.message);
+    e.discarded = true;
+    setStatus(e, '\u274C Discarded.', false);
+    setTimeout(function() {
+      entries = entries.filter(function(x) { return x.index !== idx; });
+      renderList();
+    }, 1000);
+  })
+  .catch(function(err) {
+    setStatus(e, 'Error: ' + err.message, false);
+  });
+}
+
+// ── Boot ──────────────────────────────────────────────────────────
+loadEntries();
+</script>
+</body>
+</html>
